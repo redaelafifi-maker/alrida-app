@@ -6517,7 +6517,10 @@ async function enrollRealHardwareBiometric() {
     return;
   }
 
-  const Bio = window.Capacitor ? (window.Capacitor.Plugins?.BiometricAuth || window.Capacitor.registerPlugin?.("BiometricAuth")) : null;
+  const Bio = window.Capacitor ? {
+  checkBiometry: () => window.Capacitor.nativePromise("BiometricAuth", "checkBiometry", {}),
+  authenticate: (opts) => window.Capacitor.nativePromise("BiometricAuth", "authenticate", opts)
+} : null;
   if (!Bio) {
     openHardwareBioStatusModal("خطأ في بيئة التشغيل", "❌ هذا التطبيق غير مبني عبر Capacitor ولا يدعم مستشعر البصمة.", true, enrollRealHardwareBiometric);
     return;
@@ -6577,7 +6580,10 @@ async function verifyRealHardwareBiometricLogin() {
     return;
   }
 
-  const Bio = window.Capacitor ? (window.Capacitor.Plugins?.BiometricAuth || window.Capacitor.registerPlugin?.("BiometricAuth")) : null;
+  const Bio = window.Capacitor ? {
+  checkBiometry: () => window.Capacitor.nativePromise("BiometricAuth", "checkBiometry", {}),
+  authenticate: (opts) => window.Capacitor.nativePromise("BiometricAuth", "authenticate", opts)
+} : null;
   if (!Bio) {
     openHardwareBioStatusModal("مستشعر البصمة غير متاح", "⚠️ يرجى فتح التطبيق المثبت على الهاتف.", true, verifyRealHardwareBiometricLogin);
     return;
