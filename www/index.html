@@ -1489,7 +1489,7 @@ opacity: 1;
 <!-- جدول الموظفين وكشف الرواتب والمستحقات -->
 <div class="lg:col-span-7 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-5 shadow-sm space-y-4">
 <h3 class="text-base font-extrabold text-slate-900 dark:text-white border-b border-slate-200 dark:border-slate-800 pb-2.5">سجل الموظفين، حالة الحساب، العهدة، وصافي المستحقات والرواتب</h3>
-<div id="employeesTableContainer" class="overflow-x-auto max-h-80 custom-scroll"></div>
+<div class="flex justify-between items-center mb-3"><span class="text-xs font-bold text-slate-500">إدارة الموظفين</span><button type="button" onclick="openAddNewEmployeeModal()" class="px-3 py-2 rounded-xl bg-emerald-600 text-white text-xs font-extrabold">➕ إضافة موظف</button></div><div id="employeesTableContainer" class="overflow-x-auto max-h-80 custom-scroll"></div>
 
 <h4 class="text-xs font-extrabold text-slate-700 dark:text-slate-300 pt-2">سجل السلف والمكافآت والخصومات وحالة الخصم من الراتب</h4>
 <div id="payrollLogsTableContainer" class="overflow-x-auto max-h-60 custom-scroll"></div>
@@ -4571,7 +4571,7 @@ return `
 <td class="p-2 flex flex-wrap gap-1">
 ${e.role !== 'owner' ? `
 <button type="button" data-toggle-emp="${escapeHtml(e.id)}" class="toggle-emp-status-btn px-2 py-1 rounded-lg ${e.active ? 'bg-rose-600' : 'bg-emerald-600'} text-white text-[10px] font-bold">${e.active ? 'إيقاف الحساب' : 'إعادة تفعيل'}</button>
-<button type="button" data-print-payslip="${escapeHtml(e.id)}" class="print-payslip-btn px-2 py-1 rounded-lg bg-blue-600 text-white text-[10px] font-bold">🖨️ كشف راتب</button>
+<button type="button" onclick="openEditEmployeePermsModal('${escapeHtml(e.id)}')" class="px-2 py-1 rounded-lg bg-amber-600 text-white text-[10px] font-bold">🛡️ الصلاحيات</button> <button type="button" onclick="deleteEmployeePermanently('${escapeHtml(e.id)}')" class="px-2 py-1 rounded-lg bg-red-700 text-white text-[10px] font-bold">🗑️ حذف</button> <button type="button" data-print-payslip="${escapeHtml(e.id)}" class="print-payslip-btn px-2 py-1 rounded-lg bg-blue-600 text-white text-[10px] font-bold">🖨️ كشف راتب</button>
 ` : '<span class="text-[10px] text-slate-400">صاحب المحل</span>'}
 </td>
 </tr>
@@ -6597,100 +6597,54 @@ pendingHardwareBioRetryFn();
 // تسجيل بصمة الجهاز الحقيقية من داخل الحساب النشط
 async function enrollRealHardwareBiometric() {
   const u = appState.currentUser;
-  if (!u) {
-    showToast("يرجى تسجيل الدخول أولاً", "error");
-    return;
-  }
-
+  if (!u) { showToast("يرجى تسجيل الدخول أولاً", "error"); return; }
   const Bio = window.Capacitor ? {
-  checkBiometry: () => window.Capacitor.nativePromise("BiometricAuthNative", "checkBiometry", {}),
-  authenticate: (opts) => window.Capacitor.nativePromise("BiometricAuthNative", "internalAuthenticate", opts)
-} : null;
-  if (!Bio) {
-    openHardwareBioStatusModal("خطأ في بيئة التشغيل", "❌ هذا التطبيق غير مبني عبر Capacitor ولا يدعم مستشعر البصمة.", true, enrollRealHardwareBiometric);
-    return;
-  }
-
+    checkBiometry: () => window.Capacitor.nativePromise("BiometricAuthNative", "checkBiometry", {}),
+    authenticate: (opts) => window.Capacitor.nativePromise("BiometricAuthNative", "internalAuthenticate", opts)
+  } : null;
+  if (!Bio) { openHardwareBioStatusModal("خطأ", "❌ يعمل على التطبيق المثبت فقط.", "", enrollRealHardwareBiometric); return; }
   try {
     const info = await Bio.checkBiometry();
-    if (!info.isAvailable) {
-      openHardwareBioStatusModal("البصمة غير متاحة", "⚠️ تأكد من تسجيل بصمة إصبعك في إعدادات هاتفك أولاً.", true, enrollRealHardwareBiometric);
-      return;
-    }
-
-    openHardwareBioStatusModal("تسجيل البصمة الحقيقية", "👆 ضع إصبعك على مستشعر البصمة في هاتفك للتأكيد...", "", enrollRealHardwareBiometric);
-
-    await Bio.authenticate({
-      reason: "تأكيد البصمة لربطها بحساب " + u.fullName,
-      cancelTitle: "إلغاء",
-      allowDeviceCredential: true
-    });
-
-    const credId = "CAPACITOR-BIO-" + u.id + "-" + Date.now();
+    if (!info.isAvailable) { openHardwareBioStatusModal("غير متاحة", "⚠️ سجّل بصمتك في إعدادات الهاتف أولاً.", "", enrollRealHardwareBiometric); return; }
+    openHardwareBioStatusModal("تسجيل البصمة", "👆 ضع إصبعك على المستشعر...", "", enrollRealHardwareBiometric);
+    await Bio.authenticate({ reason: "ربط البصمة بحساب " + u.fullName, cancelTitle: "إلغاء", allowDeviceCredential: true });
     localStorage.setItem(BIOMETRIC_STORAGE_KEY, u.username.toLowerCase());
-    localStorage.setItem(BIOMETRIC_CRED_ID_KEY, credId);
-
+    localStorage.setItem(BIOMETRIC_CRED_ID_KEY, "CAPACITOR-BIO-" + u.id + "-" + Date.now());
     if (typeof closeAndroidBiometricScannerModal === "function") closeAndroidBiometricScannerModal();
-    if (typeof showToast === "function") showToast("✅ تم تسجيل بصمة هاتفك الحقيقية وربطها بحسابك بنجاح!", "success");
+    if (typeof showToast === "function") showToast("✅ تم ربط بصمتك الحقيقية بنجاح!", "success");
     if (typeof updateBiometricUIStatus === "function") updateBiometricUIStatus();
   } catch (err) {
-    openHardwareBioStatusModal("تم إلغاء أو رفض البصمة", "❌ السبب: " + (err && (err.message || err.code || JSON.stringify(err))), true, enrollRealHardwareBiometric);
+    openHardwareBioStatusModal("فشل البصمة", "❌ " + (err && (err.message || err.code || "")), "", enrollRealHardwareBiometric);
   }
 }
-
 async function verifyRealHardwareBiometricLogin() {
   const errBox = document.getElementById("loginErrorBox");
   if (errBox) errBox.classList.add("hidden");
-
-  let savedBioUser = "";
-  let savedCredId = "";
-  try {
-    savedBioUser = (localStorage.getItem(BIOMETRIC_STORAGE_KEY) || "").toLowerCase();
-    savedCredId = localStorage.getItem(BIOMETRIC_CRED_ID_KEY) || "";
-  } catch (e) {}
-
+  const savedBioUser = (localStorage.getItem(BIOMETRIC_STORAGE_KEY) || "").toLowerCase();
+  const savedCredId = localStorage.getItem(BIOMETRIC_CRED_ID_KEY) || "";
   if (!savedBioUser || !savedCredId) {
-    if (errBox) {
-      errBox.textContent = "🔒 لم يتم تسجيل بصمة حقيقية على هذا الهاتف بعد! ادخل أولاً باسم المستخدم وكلمة المرور ثم اضغط زر «البصمة» من الإعدادات.";
-      errBox.classList.remove("hidden");
-    }
+    if (errBox) { errBox.textContent = "🔒 لم يتم تسجيل بصمة على هذا الهاتف بعد!"; errBox.classList.remove("hidden"); }
     return;
   }
-
   const emp = appState.employees.find(x => x.username.toLowerCase() === savedBioUser);
   if (!emp || !emp.active) {
-    if (errBox) {
-      errBox.textContent = "🔒 الحساب المرتبط بالبصمة غير موجود أو موقوف.";
-      errBox.classList.remove("hidden");
-    }
+    if (errBox) { errBox.textContent = "🔒 الحساب غير موجود أو موقوف."; errBox.classList.remove("hidden"); }
     return;
   }
-
   const Bio = window.Capacitor ? {
-  checkBiometry: () => window.Capacitor.nativePromise("BiometricAuthNative", "checkBiometry", {}),
-  authenticate: (opts) => window.Capacitor.nativePromise("BiometricAuthNative", "internalAuthenticate", opts)
-} : null;
-  if (!Bio) {
-    openHardwareBioStatusModal("مستشعر البصمة غير متاح", "⚠️ يرجى فتح التطبيق المثبت على الهاتف.", true, verifyRealHardwareBiometricLogin);
-    return;
-  }
-
+    checkBiometry: () => window.Capacitor.nativePromise("BiometricAuthNative", "checkBiometry", {}),
+    authenticate: (opts) => window.Capacitor.nativePromise("BiometricAuthNative", "internalAuthenticate", opts)
+  } : null;
+  if (!Bio) return;
   try {
-    openHardwareBioStatusModal("التحقق بالبصمة - " + emp.fullName, "👆 ضع إصبعك على مستشعر البصمة للدخول...", "", verifyRealHardwareBiometricLogin);
-
-    await Bio.authenticate({
-      reason: "تسجيل الدخول لحساب " + emp.fullName,
-      cancelTitle: "إلغاء",
-      allowDeviceCredential: true
-    });
-
+    openHardwareBioStatusModal("الدخول بالبصمة", "👆 ضع إصبعك للدخول...", "", verifyRealHardwareBiometricLogin);
+    await Bio.authenticate({ reason: "دخول " + emp.fullName, cancelTitle: "إلغاء", allowDeviceCredential: true });
     if (typeof closeAndroidBiometricScannerModal === "function") closeAndroidBiometricScannerModal();
-    await completeUserLogin(emp, "بصمة الجهاز الحقيقية (Android Biometric)");
+    await completeUserLogin(emp, "بصمة الجهاز الحقيقية");
   } catch (err) {
-    openHardwareBioStatusModal("فشل التحقق من البصمة", "❌ السبب: " + (err && (err.message || err.code || JSON.stringify(err))), true, verifyRealHardwareBiometricLogin);
+    openHardwareBioStatusModal("رفض البصمة", "❌ تأكد من إصبعك.", "", verifyRealHardwareBiometricLogin);
   }
 }
-
 document.getElementById('biometricLoginBtn')?.addEventListener('click', verifyRealHardwareBiometricLogin);
 document.getElementById('registerBiometricBtn')?.addEventListener('click', enrollRealHardwareBiometric);
 // تسجيل الخروج
@@ -9466,224 +9420,159 @@ bootstrapAlRedaApp();
 </script>
 
 <!-- ALRIDA_CLOUD_SYNC_ENGINE -->
-<div id="cloudStatusFloatingPill" style="display:none !important;" id="alridaCloudBar" style="position:fixed;bottom:14px;left:14px;z-index:99999;display:flex;align-items:center;gap:8px;background:rgba(15,23,42,0.92);border:1px solid rgba(59,130,246,0.4);padding:7px 12px;border-radius:999px;box-shadow:0 8px 20px rgba(0,0,0,0.4);backdrop-filter:blur(8px);font-family:inherit;font-size:12px;color:#f8fafc;">
-  <span id="cloudStatusDot" style="width:9px;height:9px;border-radius:50%;background:#22c55e;display:inline-block;"></span>
-  <span id="cloudStatusText">جاري الاتصال بالسحابة...</span>
-  <button onclick="openCloudConfigModal()" style="background:#2563eb;color:#fff;border:none;border-radius:999px;padding:3px 10px;font-size:11px;cursor:pointer;font-weight:bold;">⚙️ السحابة</button>
+<div id="alridaCloudBar" style="position:fixed;bottom:14px;left:14px;z-index:99999;display:flex;align-items:center;gap:8px;background:rgba(15,23,42,0.92);border:1px solid #3b82f6;padding:6px 12px;border-radius:999px;font-size:12px;color:#fff;">
+  <span id="cloudStatusDot" style="width:9px;height:9px;border-radius:50%;background:#22c55e;"></span>
+  <span id="cloudStatusText">متصل بالسحابة</span>
+  <button onclick="forcePullFromCloud()" style="background:#2563eb;color:#fff;border:none;border-radius:999px;padding:2px 8px;font-size:11px;">🔄 تحديث</button>
 </div>
-
-<div id="cloudConfigModal" style="display:none;position:fixed;inset:0;z-index:100000;background:rgba(0,0,0,0.75);align-items:center;justify-content:center;padding:16px;">
-  <div style="background:#0f172a;border:1px solid #334155;border-radius:16px;max-width:420px;width:100%;padding:20px;color:#f8fafc;direction:rtl;">
-    <h3 style="margin:0 0 8px 0;font-size:17px;color:#60a5fa;">☁️ إعدادات الربط والمزامنة السحابية</h3>
-    <p style="margin:0 0 14px 0;font-size:12px;color:#94a3b8;">التطبيق مربوط تلقائياً بقاعدة بيانات المحل السحابية للمزامنة الفورية بين الأجهزة.</p>
-    
-    <label style="display:block;font-size:12px;margin-bottom:4px;color:#cbd5e1;">رابط قاعدة البيانات (Firebase URL):</label>
-    <input id="inpFirebaseUrl" type="url" style="width:100%;box-sizing:border-box;padding:10px;border-radius:8px;border:1px solid #475569;background:#1e293b;color:#fff;font-size:13px;margin-bottom:12px;direction:ltr;">
-    
-    <label style="display:block;font-size:12px;margin-bottom:4px;color:#cbd5e1;">رمز المحل السري (يجب أن يكون موحداً في كل أجهزة المحل):</label>
-    <input id="inpShopSecret" type="text" style="width:100%;box-sizing:border-box;padding:10px;border-radius:8px;border:1px solid #475569;background:#1e293b;color:#fff;font-size:13px;margin-bottom:16px;direction:ltr;">
-    
-    <div style="display:flex;gap:8px;justify-content:flex-end;flex-wrap:wrap;">
-      <button onclick="document.getElementById('cloudConfigModal').style.display='none'" style="background:#334155;color:#fff;border:none;border-radius:8px;padding:8px 14px;cursor:pointer;">إغلاق</button>
-      <button onclick="forcePullFromCloud()" style="background:#0284c7;color:#fff;border:none;border-radius:8px;padding:8px 14px;cursor:pointer;">⬇️ سحب البيانات</button>
-      <button onclick="saveCloudConfig()" style="background:#16a34a;color:#fff;border:none;border-radius:8px;padding:8px 16px;font-weight:bold;cursor:pointer;">💾 حفظ ورفع</button>
+<div id="addEmpModal" style="display:none;position:fixed;inset:0;z-index:100001;background:rgba(0,0,0,0.8);align-items:center;justify-content:center;padding:16px;">
+  <div style="background:#0f172a;border:1px solid #334155;border-radius:16px;max-width:400px;width:100%;padding:20px;color:#fff;direction:rtl;">
+    <h3 style="margin:0 0 12px 0;color:#34d399;">➕ إضافة موظف جديد</h3>
+    <input id="newEmpFullName" type="text" placeholder="اسم الموظف (مثال: مسلم)" style="width:100%;padding:10px;border-radius:8px;background:#1e293b;color:#fff;border:1px solid #475569;margin-bottom:8px;">
+    <input id="newEmpUsername" type="text" placeholder="اسم المستخدم (إنجليزي)" style="width:100%;padding:10px;border-radius:8px;background:#1e293b;color:#fff;border:1px solid #475569;margin-bottom:8px;direction:ltr;">
+    <input id="newEmpPassword" type="text" placeholder="كلمة المرور" style="width:100%;padding:10px;border-radius:8px;background:#1e293b;color:#fff;border:1px solid #475569;margin-bottom:8px;direction:ltr;">
+    <input id="newEmpSalary" type="number" placeholder="الراتب (اختياري)" style="width:100%;padding:10px;border-radius:8px;background:#1e293b;color:#fff;border:1px solid #475569;margin-bottom:12px;">
+    <div style="display:flex;gap:8px;justify-content:flex-end;">
+      <button onclick="document.getElementById('addEmpModal').style.display='none'" style="background:#334155;color:#fff;border:none;border-radius:8px;padding:8px 14px;">إلغاء</button>
+      <button onclick="submitNewEmployee()" style="background:#10b981;color:#fff;border:none;border-radius:8px;padding:8px 16px;font-weight:bold;">حفظ</button>
     </div>
+  </div>
+</div>
+<div id="editEmpPermsModal" style="display:none;position:fixed;inset:0;z-index:100001;background:rgba(0,0,0,0.8);align-items:center;justify-content:center;padding:16px;">
+  <div style="background:#0f172a;border:1px solid #334155;border-radius:16px;max-width:400px;width:100%;padding:20px;color:#fff;direction:rtl;">
+    <h3 id="editPermsTitle" style="margin:0 0 10px 0;color:#fbbf24;">🛡️ صلاحيات الموظف</h3>
+    <input type="hidden" id="editPermsEmpId">
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;font-size:12px;margin-bottom:14px;">
+      <label style="background:#1e293b;padding:8px;border-radius:8px;"><input type="checkbox" class="perm-chk" value="tab-epay" checked> الكاش والفواتير</label>
+      <label style="background:#1e293b;padding:8px;border-radius:8px;"><input type="checkbox" class="perm-chk" value="tab-sales" checked> المبيعات</label>
+      <label style="background:#1e293b;padding:8px;border-radius:8px;"><input type="checkbox" class="perm-chk" value="tab-purchases" checked> المشتريات</label>
+      <label style="background:#1e293b;padding:8px;border-radius:8px;"><input type="checkbox" class="perm-chk" value="tab-emp-portal" checked> إرسال الطلبات</label>
+      <label style="background:#1e293b;padding:8px;border-radius:8px;"><input type="checkbox" class="perm-chk" value="tab-inventory"> المخزن</label>
+      <label style="background:#1e293b;padding:8px;border-radius:8px;"><input type="checkbox" class="perm-chk" value="tab-expenses"> المصروفات</label>
+    </div>
+    <div style="display:flex;gap:8px;justify-content:flex-end;">
+      <button onclick="document.getElementById('editEmpPermsModal').style.display='none'" style="background:#334155;color:#fff;border:none;border-radius:8px;padding:8px 14px;">إلغاء</button>
+      <button onclick="saveEmployeePermissions()" style="background:#f59e0b;color:#000;border:none;border-radius:8px;padding:8px 16px;font-weight:bold;">حفظ</button>
+    </div>
+  </div>
+</div>
+<div id="adminIncomingReqBanner" style="display:none;position:fixed;top:14px;left:14px;right:14px;z-index:100005;background:#1d4ed8;border:2px solid #93c5fd;border-radius:14px;padding:12px;color:#fff;direction:rtl;">
+  <div style="display:flex;justify-content:space-between;align-items:center;">
+    <div><b>🔔 طلب جديد من الموظف!</b><div id="adminIncomingReqText" style="font-size:12px;"></div></div>
+    <button onclick="document.getElementById('adminIncomingReqBanner').style.display='none';document.querySelector('[data-tab=tab-employees]')?.click();" style="background:#22c55e;color:#000;border:none;border-radius:8px;padding:6px 10px;font-weight:bold;">عرض</button>
   </div>
 </div>
 
 <script>
 (function() {
-  const DEFAULT_FB_URL = ["https:", "", "://firebaseio.com"].join("/");
-  const DEFAULT_SECRET = "alrida_main_shop";
-  const CFG_URL_KEY = "ALRIDA_FB_URL";
-  const CFG_SEC_KEY = "ALRIDA_SHOP_SECRET";
-  const DEVICE_ID = localStorage.getItem("ALRIDA_DEV_ID") || ("dev_" + Math.random().toString(36).slice(2, 10));
-  localStorage.setItem("ALRIDA_DEV_ID", DEVICE_ID);
-
-  if (!localStorage.getItem(CFG_URL_KEY)) localStorage.setItem(CFG_URL_KEY, DEFAULT_FB_URL);
-  if (!localStorage.getItem(CFG_SEC_KEY)) localStorage.setItem(CFG_SEC_KEY, DEFAULT_SECRET);
-
-  let lastCloudTimestamp = Number(localStorage.getItem("ALRIDA_LAST_SYNC_TS") || 0);
-  let pushTimer = null;
+  window.openAddNewEmployeeModal = () => { document.getElementById("addEmpModal").style.display = "flex"; };
+  window.submitNewEmployee = () => {
+    const fullName = document.getElementById("newEmpFullName").value.trim();
+    const username = document.getElementById("newEmpUsername").value.trim().toLowerCase();
+    const password = document.getElementById("newEmpPassword").value.trim();
+    const baseSalary = Number(document.getElementById("newEmpSalary").value || 0);
+    if (!fullName || !username || !password) return alert("أكمل البيانات");
+    appState.employees.push({ id: "emp_" + Date.now(), fullName, username, password, role: "employee", active: true, baseSalary, bonusesTotal: 0, advancesRemaining: 0, penaltiesTotal: 0, netSalary: baseSalary, allowedTabs: ["tab-dashboard", "tab-epay", "tab-sales", "tab-purchases", "tab-emp-portal"] });
+    document.getElementById("addEmpModal").style.display = "none";
+    if (typeof saveState === "function") saveState();
+    if (typeof renderAll === "function") renderAll();
+  };
+  window.openEditEmployeePermsModal = (id) => {
+    const emp = appState.employees.find(e => e.id === id); if (!emp) return;
+    document.getElementById("editPermsEmpId").value = id;
+    document.getElementById("editPermsTitle").textContent = "🛡️ صلاحيات: " + emp.fullName;
+    const allowed = emp.allowedTabs || ["tab-dashboard", "tab-epay", "tab-sales", "tab-purchases", "tab-emp-portal"];
+    document.querySelectorAll(".perm-chk").forEach(c => c.checked = allowed.includes(c.value));
+    document.getElementById("editEmpPermsModal").style.display = "flex";
+  };
+  window.saveEmployeePermissions = () => {
+    const emp = appState.employees.find(e => e.id === document.getElementById("editPermsEmpId").value); if (!emp) return;
+    const sel = ["tab-dashboard"];
+    document.querySelectorAll(".perm-chk").forEach(c => { if (c.checked) sel.push(c.value); });
+    emp.allowedTabs = sel;
+    document.getElementById("editEmpPermsModal").style.display = "none";
+    if (typeof saveState === "function") saveState();
+  };
+  window.deleteEmployeePermanently = (id) => {
+    const emp = appState.employees.find(e => e.id === id);
+    if (!emp || emp.role === "owner" || !confirm("حذف " + emp.fullName + " نهائياً؟")) return;
+    appState.employees = appState.employees.filter(e => e.id !== id);
+    if (typeof saveState === "function") saveState();
+    if (typeof renderAll === "function") renderAll();
+  };
+  setInterval(() => {
+    const u = appState && appState.currentUser;
+    if (!u || u.role === "owner") return;
+    const allowed = u.allowedTabs || ["tab-dashboard", "tab-epay", "tab-sales", "tab-purchases", "tab-emp-portal"];
+    document.querySelectorAll("[data-tab], [data-target], button, a").forEach(el => {
+      const t = el.getAttribute("data-tab") || el.getAttribute("data-target") || "";
+      if (t.startsWith("tab-") && !allowed.includes(t)) el.style.display = "none";
+    });
+    document.querySelectorAll(".app-tab-section").forEach(s => { if (!allowed.includes(s.id)) s.classList.add("hidden"); });
+    const dash = document.getElementById("tab-dashboard");
+    if (dash) dash.querySelectorAll("div, section").forEach(c => {
+      const tx = c.textContent || "";
+      if ((tx.includes("صافي الربح") || tx.includes("الأرباح") || tx.includes("ربح اليوم") || tx.includes("رأس المال")) && c.children.length <= 4) c.style.display = "none";
+    });
+  }, 1000);
+  const ENDPOINT = ["https:", "", "://firebaseio.com", "shops", "alrida_main_shop", "state.json"].join("/");
+  const DEV_ID = localStorage.getItem("ALRIDA_DEV_ID") || ("d_" + Math.random().toString(36).slice(2, 9));
+  localStorage.setItem("ALRIDA_DEV_ID", DEV_ID);
+  let lastTs = Number(localStorage.getItem("ALRIDA_LAST_SYNC_TS") || 0), knownReqs = -1, timer = null;
   window._isApplyingCloudState = false;
-
-  function setCloudBadge(color, text) {
-    const dot = document.getElementById("cloudStatusDot");
-    const txt = document.getElementById("cloudStatusText");
-    if (dot) dot.style.background = color;
-    if (txt) txt.textContent = text;
-  }
-
-  function getEndpoint() {
-    let url = (localStorage.getItem(CFG_URL_KEY) || DEFAULT_FB_URL).trim().replace(/\/+$/, "");
-    let sec = (localStorage.getItem(CFG_SEC_KEY) || DEFAULT_SECRET).trim().replace(/[^a-zA-Z0-9_-]/g, "_");
-    if (!url) return null;
-    return url + "/shops/" + sec + "/state.json";
-  }
-
-  window.openCloudConfigModal = function() {
-    document.getElementById("inpFirebaseUrl").value = localStorage.getItem(CFG_URL_KEY) || DEFAULT_FB_URL;
-    document.getElementById("inpShopSecret").value = localStorage.getItem(CFG_SEC_KEY) || DEFAULT_SECRET;
-    document.getElementById("cloudConfigModal").style.display = "flex";
-  };
-
-  window.saveCloudConfig = async function() {
-    const url = document.getElementById("inpFirebaseUrl").value.trim() || DEFAULT_FB_URL;
-    const sec = document.getElementById("inpShopSecret").value.trim() || DEFAULT_SECRET;
-    localStorage.setItem(CFG_URL_KEY, url);
-    localStorage.setItem(CFG_SEC_KEY, sec);
-    document.getElementById("cloudConfigModal").style.display = "none";
-    await window.pushStateToCloud(appState, true);
-    startCloudListener();
-  };
-
-  window.pushStateToCloud = function(stateObj, immediate = false) {
-    const endpoint = getEndpoint();
-    if (!endpoint) return;
-
-    clearTimeout(pushTimer);
-    pushTimer = setTimeout(async () => {
+  const reqCount = (st) => !st ? 0 : (st.employeeRequests?.length||0) + (st.leaveRequests?.length||0) + (st.pendingRequests?.length||0) + (st.notifications?.length||0);
+  window.pushStateToCloud = (st, imm = false) => {
+    clearTimeout(timer);
+    timer = setTimeout(async () => {
       try {
-        setCloudBadge("#eab308", "جاري المزامنة...");
-        const ts = Date.now();
-        const payload = {
-          updatedAt: ts,
-          updatedBy: DEVICE_ID,
-          data: stateObj
-        };
-        const res = await fetch(endpoint, {
-          method: "PUT",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(payload)
-        });
-        if (!res.ok) throw new Error("HTTP " + res.status);
-        lastCloudTimestamp = ts;
-        localStorage.setItem("ALRIDA_LAST_SYNC_TS", String(ts));
-        setCloudBadge("#22c55e", "متصل ومُزامَن ✓");
+        document.getElementById("cloudStatusText").textContent = "جاري المزامنة...";
+        const ts = Date.now(), clean = Object.assign({}, st); delete clean.currentUser;
+        const r = await fetch(ENDPOINT, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ updatedAt: ts, updatedBy: DEV_ID, data: clean }) });
+        if (!r.ok) throw 0;
+        lastTs = ts; localStorage.setItem("ALRIDA_LAST_SYNC_TS", String(ts)); knownReqs = reqCount(clean);
+        document.getElementById("cloudStatusDot").style.background = "#22c55e";
+        document.getElementById("cloudStatusText").textContent = "مُزامَن ✓";
       } catch (e) {
-        setCloudBadge("#ef4444", "وضع أوفلاين (محفوظ)");
+        document.getElementById("cloudStatusDot").style.background = "#ef4444";
+        document.getElementById("cloudStatusText").textContent = "أوفلاين";
       }
-    }, immediate ? 50 : 600);
+    }, imm ? 50 : 400);
   };
-
-  window.forcePullFromCloud = async function() {
-    const endpoint = getEndpoint();
-    if (!endpoint) return;
+  window.forcePullFromCloud = async () => {
     try {
-      setCloudBadge("#eab308", "جاري السحب...");
-      const res = await fetch(endpoint);
-      const remote = await res.json();
-      if (remote && remote.data) {
-        applyRemoteData(remote, true);
-        if (typeof showToast === "function") showToast("✅ تم سحب أحدث بيانات المحل من السحابة بنجاح!", "success");
-      } else {
-        await window.pushStateToCloud(appState, true);
-        if (typeof showToast === "function") showToast("✅ تم رفع بياناتك الحالية إلى السحابة كنسخة أساسية!", "success");
-      }
-    } catch (e) {
-      if (typeof showToast === "function") showToast("❌ تعذر الاتصال بالسحابة: " + e.message, "error");
-    }
+      const r = await fetch(ENDPOINT), rem = await r.json();
+      if (rem && rem.data) applyRemote(rem, true);
+      else await window.pushStateToCloud(appState, true);
+    } catch (e) {}
   };
-
-  function applyRemoteData(remote, force = false) {
-    if (!remote || !remote.data) return;
-    if (!force && remote.updatedBy === DEVICE_ID) return;
-    if (!force && remote.updatedAt && remote.updatedAt <= lastCloudTimestamp) return;
-
+  function applyRemote(rem, force = false) {
+    if (!rem || !rem.data || (!force && (rem.updatedBy === DEV_ID || rem.updatedAt <= lastTs))) return;
     window._isApplyingCloudState = true;
     try {
-      Object.assign(appState, remote.data);
+      const me = appState.currentUser, newRc = reqCount(rem.data);
+      Object.assign(appState, rem.data);
+      if (me) appState.currentUser = me;
       localStorage.setItem(STORAGE_KEY, JSON.stringify(appState));
-      if (typeof saveStateToIndexedDb === "function") saveStateToIndexedDb(appState);
-      lastCloudTimestamp = remote.updatedAt || Date.now();
-      localStorage.setItem("ALRIDA_LAST_SYNC_TS", String(lastCloudTimestamp));
+      lastTs = rem.updatedAt || Date.now(); localStorage.setItem("ALRIDA_LAST_SYNC_TS", String(lastTs));
       if (typeof renderAll === "function") renderAll();
-      else if (typeof updateDashboard === "function") updateDashboard();
-      setCloudBadge("#22c55e", "تم التحديث من السحابة ✓");
-    } finally {
-      window._isApplyingCloudState = false;
-    }
-  }
-
-  let pollInterval = null;
-  function startCloudListener() {
-    clearInterval(pollInterval);
-    const endpoint = getEndpoint();
-    if (!endpoint) return;
-
-    pollInterval = setInterval(async () => {
-      if (!navigator.onLine) {
-        setCloudBadge("#ef4444", "وضع أوفلاين");
-        return;
+      if (me && me.role === "owner" && knownReqs !== -1 && newRc > knownReqs) {
+        document.getElementById("adminIncomingReqText").textContent = "وصل طلب جديد من الموظف عبر السحابة.";
+        document.getElementById("adminIncomingReqBanner").style.display = "block";
       }
-      try {
-        const res = await fetch(endpoint);
-        if (!res.ok) return;
-        const remote = await res.json();
-        if (remote && remote.data) {
-          if (remote.updatedAt > lastCloudTimestamp && remote.updatedBy !== DEVICE_ID) {
-            applyRemoteData(remote);
-          } else {
-            setCloudBadge("#22c55e", "متصل ومُزامَن ✓");
-          }
-        } else {
-          await window.pushStateToCloud(appState, true);
-        }
-      } catch (e) {}
-    }, 3000);
+      knownReqs = newRc;
+      document.getElementById("cloudStatusText").textContent = "مُزامَن ✓";
+    } finally { window._isApplyingCloudState = false; }
   }
-
-  window.addEventListener("online", () => {
-    if (getEndpoint()) window.pushStateToCloud(appState, true);
-  });
-
-  window.addEventListener("load", () => {
-    startCloudListener();
-  });
+  setInterval(async () => {
+    if (!navigator.onLine) return;
+    try {
+      const r = await fetch(ENDPOINT), rem = await r.json();
+      if (rem && rem.data && rem.updatedAt > lastTs && rem.updatedBy !== DEV_ID) applyRemote(rem);
+      else if (!rem) window.pushStateToCloud(appState, true);
+    } catch (e) {}
+  }, 2500);
 })();
-</script>
 
-<script>
-async function fetchAvailableGeminiModels() {
-  const keyInput = document.getElementById("aiRuntimeApiKeyInput");
-  const apiKey = (keyInput && keyInput.value.trim()) || localStorage.getItem("ALRIDA_GEMINI_API_KEY") || "";
-  if (!apiKey) {
-    if (typeof showToast === "function") showToast("⚠️ أدخل مفتاح Gemini API أولاً ثم اضغط تحديث.", "warning");
-    return;
-  }
-  try {
-    const url = ["https:", "", "://googleapis.com", "v1beta", "models?key=" + encodeURIComponent(apiKey)].join("/");
-    const res = await fetch(url);
-    const data = await res.json();
-    if (!data.models) throw new Error(data.error?.message || "فشل جلب الموديلات");
-    const select = document.getElementById("aiModelSelectInput");
-    const valid = data.models.filter(m => m.supportedGenerationMethods && m.supportedGenerationMethods.includes("generateContent") && m.name.includes("gemini"));
-    if (valid.length > 0 && select) {
-      const currentVal = select.value;
-      select.innerHTML = "";
-      valid.reverse().forEach(m => {
-        const id = m.name.replace("models/", "");
-        const opt = document.createElement("option");
-        opt.value = id;
-        opt.textContent = (m.displayName || id) + " (" + id + ")";
-        select.appendChild(opt);
-      });
-      if ([...select.options].some(o => o.value === currentVal)) select.value = currentVal;
-      if (typeof showToast === "function") showToast("✅ تم تحديث القائمة وجلب " + valid.length + " موديل متاح على مفتاحك!", "success");
-    }
-  } catch (e) {
-    if (typeof showToast === "function") showToast("❌ خطأ أثناء جلب الموديلات: " + e.message, "error");
-  }
-}
-
-window.addEventListener("load", () => {
-
-  const chatBox = document.getElementById("aiChatMessagesBox");
-  if (chatBox) {
-    chatBox.style.minHeight = "58vh";
-    chatBox.style.maxHeight = "68vh";
-  }
-});
 </script>
 </body>
 </html>
