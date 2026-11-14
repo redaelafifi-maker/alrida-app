@@ -3042,6 +3042,9 @@ try {
 localStorage.setItem(STORAGE_KEY, JSON.stringify(appState));
 } catch (e) {}
 saveStateToIndexedDb(appState);
+  if (typeof window.pushStateToCloud === "function" && !window._isApplyingCloudState) {
+    window.pushStateToCloud(appState);
+  }
 if (broadcast && syncChannel) {
 try {
 syncChannel.postMessage({ type: 'STATE_UPDATED', payload: appState });
@@ -9294,6 +9297,184 @@ window.addEventListener('DOMContentLoaded', bootstrapAlRedaApp);
 } else {
 bootstrapAlRedaApp();
 }
+})();
+</script>
+
+<!-- ALRIDA_CLOUD_SYNC_ENGINE -->
+<div id="alridaCloudBar" style="position:fixed;bottom:14px;left:14px;z-index:99999;display:flex;align-items:center;gap:8px;background:rgba(15,23,42,0.92);border:1px solid rgba(59,130,246,0.4);padding:7px 12px;border-radius:999px;box-shadow:0 8px 20px rgba(0,0,0,0.4);backdrop-filter:blur(8px);font-family:inherit;font-size:12px;color:#f8fafc;">
+  <span id="cloudStatusDot" style="width:9px;height:9px;border-radius:50%;background:#22c55e;display:inline-block;"></span>
+  <span id="cloudStatusText">جاري الاتصال بالسحابة...</span>
+  <button onclick="openCloudConfigModal()" style="background:#2563eb;color:#fff;border:none;border-radius:999px;padding:3px 10px;font-size:11px;cursor:pointer;font-weight:bold;">⚙️ السحابة</button>
+</div>
+
+<div id="cloudConfigModal" style="display:none;position:fixed;inset:0;z-index:100000;background:rgba(0,0,0,0.75);align-items:center;justify-content:center;padding:16px;">
+  <div style="background:#0f172a;border:1px solid #334155;border-radius:16px;max-width:420px;width:100%;padding:20px;color:#f8fafc;direction:rtl;">
+    <h3 style="margin:0 0 8px 0;font-size:17px;color:#60a5fa;">☁️ إعدادات الربط والمزامنة السحابية</h3>
+    <p style="margin:0 0 14px 0;font-size:12px;color:#94a3b8;">التطبيق مربوط تلقائياً بقاعدة بيانات المحل السحابية للمزامنة الفورية بين الأجهزة.</p>
+    
+    <label style="display:block;font-size:12px;margin-bottom:4px;color:#cbd5e1;">رابط قاعدة البيانات (Firebase URL):</label>
+    <input id="inpFirebaseUrl" type="url" style="width:100%;box-sizing:border-box;padding:10px;border-radius:8px;border:1px solid #475569;background:#1e293b;color:#fff;font-size:13px;margin-bottom:12px;direction:ltr;">
+    
+    <label style="display:block;font-size:12px;margin-bottom:4px;color:#cbd5e1;">رمز المحل السري (يجب أن يكون موحداً في كل أجهزة المحل):</label>
+    <input id="inpShopSecret" type="text" style="width:100%;box-sizing:border-box;padding:10px;border-radius:8px;border:1px solid #475569;background:#1e293b;color:#fff;font-size:13px;margin-bottom:16px;direction:ltr;">
+    
+    <div style="display:flex;gap:8px;justify-content:flex-end;flex-wrap:wrap;">
+      <button onclick="document.getElementById('cloudConfigModal').style.display='none'" style="background:#334155;color:#fff;border:none;border-radius:8px;padding:8px 14px;cursor:pointer;">إغلاق</button>
+      <button onclick="forcePullFromCloud()" style="background:#0284c7;color:#fff;border:none;border-radius:8px;padding:8px 14px;cursor:pointer;">⬇️ سحب البيانات</button>
+      <button onclick="saveCloudConfig()" style="background:#16a34a;color:#fff;border:none;border-radius:8px;padding:8px 16px;font-weight:bold;cursor:pointer;">💾 حفظ ورفع</button>
+    </div>
+  </div>
+</div>
+
+<script>
+(function() {
+  const DEFAULT_FB_URL = ["https:", "", "://firebaseio.com"].join("/");
+  const DEFAULT_SECRET = "alrida_main_shop";
+  const CFG_URL_KEY = "ALRIDA_FB_URL";
+  const CFG_SEC_KEY = "ALRIDA_SHOP_SECRET";
+  const DEVICE_ID = localStorage.getItem("ALRIDA_DEV_ID") || ("dev_" + Math.random().toString(36).slice(2, 10));
+  localStorage.setItem("ALRIDA_DEV_ID", DEVICE_ID);
+
+  if (!localStorage.getItem(CFG_URL_KEY)) localStorage.setItem(CFG_URL_KEY, DEFAULT_FB_URL);
+  if (!localStorage.getItem(CFG_SEC_KEY)) localStorage.setItem(CFG_SEC_KEY, DEFAULT_SECRET);
+
+  let lastCloudTimestamp = Number(localStorage.getItem("ALRIDA_LAST_SYNC_TS") || 0);
+  let pushTimer = null;
+  window._isApplyingCloudState = false;
+
+  function setCloudBadge(color, text) {
+    const dot = document.getElementById("cloudStatusDot");
+    const txt = document.getElementById("cloudStatusText");
+    if (dot) dot.style.background = color;
+    if (txt) txt.textContent = text;
+  }
+
+  function getEndpoint() {
+    let url = (localStorage.getItem(CFG_URL_KEY) || DEFAULT_FB_URL).trim().replace(/\/+$/, "");
+    let sec = (localStorage.getItem(CFG_SEC_KEY) || DEFAULT_SECRET).trim().replace(/[^a-zA-Z0-9_-]/g, "_");
+    if (!url) return null;
+    return url + "/shops/" + sec + "/state.json";
+  }
+
+  window.openCloudConfigModal = function() {
+    document.getElementById("inpFirebaseUrl").value = localStorage.getItem(CFG_URL_KEY) || DEFAULT_FB_URL;
+    document.getElementById("inpShopSecret").value = localStorage.getItem(CFG_SEC_KEY) || DEFAULT_SECRET;
+    document.getElementById("cloudConfigModal").style.display = "flex";
+  };
+
+  window.saveCloudConfig = async function() {
+    const url = document.getElementById("inpFirebaseUrl").value.trim() || DEFAULT_FB_URL;
+    const sec = document.getElementById("inpShopSecret").value.trim() || DEFAULT_SECRET;
+    localStorage.setItem(CFG_URL_KEY, url);
+    localStorage.setItem(CFG_SEC_KEY, sec);
+    document.getElementById("cloudConfigModal").style.display = "none";
+    await window.pushStateToCloud(appState, true);
+    startCloudListener();
+  };
+
+  window.pushStateToCloud = function(stateObj, immediate = false) {
+    const endpoint = getEndpoint();
+    if (!endpoint) return;
+
+    clearTimeout(pushTimer);
+    pushTimer = setTimeout(async () => {
+      try {
+        setCloudBadge("#eab308", "جاري المزامنة...");
+        const ts = Date.now();
+        const payload = {
+          updatedAt: ts,
+          updatedBy: DEVICE_ID,
+          data: stateObj
+        };
+        const res = await fetch(endpoint, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload)
+        });
+        if (!res.ok) throw new Error("HTTP " + res.status);
+        lastCloudTimestamp = ts;
+        localStorage.setItem("ALRIDA_LAST_SYNC_TS", String(ts));
+        setCloudBadge("#22c55e", "متصل ومُزامَن ✓");
+      } catch (e) {
+        setCloudBadge("#ef4444", "وضع أوفلاين (محفوظ)");
+      }
+    }, immediate ? 50 : 600);
+  };
+
+  window.forcePullFromCloud = async function() {
+    const endpoint = getEndpoint();
+    if (!endpoint) return;
+    try {
+      setCloudBadge("#eab308", "جاري السحب...");
+      const res = await fetch(endpoint);
+      const remote = await res.json();
+      if (remote && remote.data) {
+        applyRemoteData(remote, true);
+        alert("✅ تم سحب أحدث بيانات المحل من السحابة بنجاح!");
+      } else {
+        await window.pushStateToCloud(appState, true);
+        alert("✅ تم رفع بياناتك الحالية إلى السحابة كنسخة أساسية!");
+      }
+    } catch (e) {
+      alert("❌ تعذر الاتصال بالسحابة: " + e.message);
+    }
+  };
+
+  function applyRemoteData(remote, force = false) {
+    if (!remote || !remote.data) return;
+    if (!force && remote.updatedBy === DEVICE_ID) return;
+    if (!force && remote.updatedAt && remote.updatedAt <= lastCloudTimestamp) return;
+
+    window._isApplyingCloudState = true;
+    try {
+      Object.assign(appState, remote.data);
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(appState));
+      if (typeof saveStateToIndexedDb === "function") saveStateToIndexedDb(appState);
+      lastCloudTimestamp = remote.updatedAt || Date.now();
+      localStorage.setItem("ALRIDA_LAST_SYNC_TS", String(lastCloudTimestamp));
+      if (typeof renderAll === "function") renderAll();
+      else if (typeof updateDashboard === "function") updateDashboard();
+      setCloudBadge("#22c55e", "تم التحديث من السحابة ✓");
+    } finally {
+      window._isApplyingCloudState = false;
+    }
+  }
+
+  let pollInterval = null;
+  function startCloudListener() {
+    clearInterval(pollInterval);
+    const endpoint = getEndpoint();
+    if (!endpoint) return;
+
+    pollInterval = setInterval(async () => {
+      if (!navigator.onLine) {
+        setCloudBadge("#ef4444", "وضع أوفلاين");
+        return;
+      }
+      try {
+        const res = await fetch(endpoint);
+        if (!res.ok) return;
+        const remote = await res.json();
+        if (remote && remote.data) {
+          if (remote.updatedAt > lastCloudTimestamp && remote.updatedBy !== DEVICE_ID) {
+            applyRemoteData(remote);
+          } else {
+            setCloudBadge("#22c55e", "متصل ومُزامَن ✓");
+          }
+        } else {
+          await window.pushStateToCloud(appState, true);
+        }
+      } catch (e) {}
+    }, 3000);
+  }
+
+  window.addEventListener("online", () => {
+    if (getEndpoint()) window.pushStateToCloud(appState, true);
+  });
+
+  window.addEventListener("load", () => {
+    startCloudListener();
+  });
 })();
 </script>
 </body>
