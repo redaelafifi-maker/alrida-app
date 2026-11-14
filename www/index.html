@@ -253,6 +253,17 @@ opacity: 1;
   }
 </style>
 
+
+<style id="alrida-safe-area-fix">
+  body, html {
+    padding-top: env(safe-area-inset-top, 24px) !important;
+    padding-bottom: env(safe-area-inset-bottom, 20px) !important;
+  }
+  header, .top-bar, .app-header {
+    margin-top: env(safe-area-inset-top, 0px) !important;
+  }
+</style>
+
 </head>
 <body class="bg-slate-100 dark:bg-slate-950 text-slate-800 dark:text-slate-100 min-h-screen selection:bg-blue-600 selection:text-white">
 
