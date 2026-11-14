@@ -9971,5 +9971,116 @@ window.forceRealZeroFactoryReset = async function() {
 };
 
 </script>
+
+<!-- محرك التحديث الهوائي الفوري (OTA Live Updater) -->
+<script id="alrida-ota-updater">
+(function() {
+  const GITHUB_RAW_URL = "https://raw.githubusercontent.com/redaelafifi-maker/alrida-app/main/www/index.html";
+  const OTA_STORAGE_KEY = "ALRIDA_OTA_LIVE_HTML";
+  const OTA_APPLIED_FLAG = "ALRIDA_OTA_JUST_APPLIED";
+
+  // 1. دالة سحب التحديث الفوري من GitHub وتطبيقه بدون إعادة تثبيت التطبيق
+  window.triggerInstantAppUpdate = async function(btnEl) {
+    const origText = btnEl ? btnEl.innerHTML : "";
+    try {
+      if (btnEl) {
+        btnEl.innerHTML = "⏳ جاري سحب التحديث...";
+        btnEl.style.opacity = "0.7";
+        btnEl.disabled = true;
+      }
+
+      // جلب أحدث نسخة من GitHub مع تخطي الكاش نهائياً
+      const res = await fetch(GITHUB_RAW_URL + "?t=" + Date.now(), {
+        cache: "no-store",
+        headers: { "Cache-Control": "no-cache" }
+      });
+
+      if (!res.ok) throw new Error("تأكد من اتصال الإنترنت أو أن المستودع العام (Public) مرفوع عليه الملف");
+
+      const latestHtml = await res.text();
+      if (!latestHtml || !latestHtml.includes("<html")) {
+        throw new Error("الملف المسحوب غير مكتمل");
+      }
+
+      // حفظ النسخة الجديدة في ذاكرة التطبيق وتشغيلها فوراً
+      localStorage.setItem(OTA_STORAGE_KEY, latestHtml);
+      sessionStorage.setItem(OTA_APPLIED_FLAG, "1");
+
+      if (btnEl) {
+        btnEl.innerHTML = "✅ تم التحديث! جاري الفتح...";
+        btnEl.style.background = "#10b981";
+      }
+
+      setTimeout(() => {
+        document.open();
+        document.write(latestHtml);
+        document.close();
+      }, 400);
+
+    } catch (err) {
+      alert("❌ تعذر التحديث المباشر: " + err.message);
+      if (btnEl) {
+        btnEl.innerHTML = origText;
+        btnEl.style.opacity = "1";
+        btnEl.disabled = false;
+      }
+    }
+  };
+
+  // 2. إنشاء زر التحديث الفوري العائم (قابل للسحب عشان ميغطيش على أي حاجة)
+  function injectUpdateButton() {
+    if (document.getElementById("alridaLiveUpdateBtn")) return;
+    const btn = document.createElement("button");
+    btn.id = "alridaLiveUpdateBtn";
+    btn.innerHTML = "🔄 تحديث النظام";
+    btn.style.cssText = "position:fixed; top:10px; left:28px; z-index:99999; background:linear-gradient(135deg, #2563eb, #7c3aed); color:#fff; border:1px solid rgba(255,255,255,0.3); padding:6px 12px; border-radius:999px; font-size:12px; font-weight:bold; font-family:inherit; box-shadow:0 4px 15px rgba(37,99,235,0.45); cursor:pointer; display:flex; align-items:center; gap:5px;";
+    
+    // دعم السحب باليد إلى أي مكان في الشاشة
+    let isDragging = false, startX, startY, initialLeft, initialTop;
+    btn.addEventListener("touchstart", (e) => {
+      isDragging = false;
+      const t = e.touches[0];
+      startX = t.clientX; startY = t.clientY;
+      const rect = btn.getBoundingClientRect();
+      initialLeft = rect.left; initialTop = rect.top;
+    }, { passive: true });
+
+    btn.addEventListener("touchmove", (e) => {
+      const t = e.touches[0];
+      if (Math.abs(t.clientX - startX) > 8 || Math.abs(t.clientY - startY) > 8) {
+        isDragging = true;
+        btn.style.left = Math.max(5, Math.min(window.innerWidth - btn.offsetWidth - 5, initialLeft + (t.clientX - startX))) + "px";
+        btn.style.top = Math.max(5, Math.min(window.innerHeight - btn.offsetHeight - 5, initialTop + (t.clientY - startY))) + "px";
+      }
+    }, { passive: true });
+
+    btn.addEventListener("click", (e) => {
+      if (isDragging) { e.preventDefault(); return; }
+      window.triggerInstantAppUpdate(btn);
+    });
+
+    document.body.appendChild(btn);
+  }
+
+  // 3. تشغيل النسخة المحدثة المحفوظة تلقائياً عند فتح التطبيق في المرات القادمة
+  if (!sessionStorage.getItem(OTA_APPLIED_FLAG)) {
+    const cachedHtml = localStorage.getItem(OTA_STORAGE_KEY);
+    if (cachedHtml && cachedHtml.length > 1000 && cachedHtml !== document.documentElement.outerHTML) {
+      sessionStorage.setItem(OTA_APPLIED_FLAG, "1");
+      document.open();
+      document.write(cachedHtml);
+      document.close();
+      return;
+    }
+  }
+
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", injectUpdateButton);
+  } else {
+    injectUpdateButton();
+  }
+})();
+</script>
+
 </body>
 </html>
