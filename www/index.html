@@ -2,7 +2,7 @@
 <html lang="ar" dir="rtl" class="dark">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
 <meta name="theme-color" content="#0f172a">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
@@ -179,6 +179,80 @@ opacity: 1;
 .no-scrollbar::-webkit-scrollbar { display: none; }
 .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
 </style>
+
+<style id="alrida-native-app-polish">
+  /* إلغاء سلوكيات المتصفح ليتحول إلى تطبيق أصلي */
+  *, *::before, *::after {
+    -webkit-tap-highlight-color: transparent !important;
+    -webkit-touch-callout: none !important;
+    user-select: none !important;
+    -webkit-user-select: none !important;
+    box-sizing: border-box;
+  }
+  
+  /* السماح بالكتابة والتحديد داخل حقول الإدخال فقط */
+  input, textarea, [contenteditable="true"] {
+    user-select: text !important;
+    -webkit-user-select: text !important;
+  }
+
+  /* نعومة التمرير وإخفاء شريط التمرير المزعج */
+  html, body {
+    overscroll-behavior-y: none !important;
+    scroll-behavior: smooth;
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+  }
+  ::-webkit-scrollbar {
+    width: 0px !important;
+    height: 0px !important;
+    display: none !important;
+  }
+
+  /* مسافة أمان سفلية حتى لا يغطي البار السفلي أو زر الرضا العائم أي أرقام أو كروت */
+  main, #appMainContainer, .main-content, body {
+    padding-bottom: 105px !important;
+  }
+
+  /* فيزياء اللمس للأزرار والكروت (تغطس بنعومة عند اللمس مثل تطبيقات البنوك) */
+  button, .btn, [role="button"], .card, .quick-action-card, nav a, nav button {
+    transition: transform 0.12s cubic-bezier(0.2, 0.8, 0.2, 1), opacity 0.12s ease, box-shadow 0.15s ease !important;
+  }
+  button:active, .btn:active, [role="button"]:active, .quick-action-card:active {
+    transform: scale(0.95) !important;
+    opacity: 0.9 !important;
+  }
+
+  /* تحسين مظهر الكروت المالية لتصبح فخمة وواضحة الحدود */
+  .bg-slate-800, .bg-slate-900, [class*="rounded-2xl"], [class*="rounded-xl"] {
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+  }
+
+  /* منع قص النصوص أو الأرقام الكبيرة داخل الكروت */
+  h1, h2, h3, p, span, div {
+    word-wrap: break-word;
+  }
+
+  /* ضبط مكان وحجم زر المساعد العائم (الرضا) ليركن بأناقة دون تغطية صافي الربح */
+  #floatingAiBtn, .floating-ai-btn, [id*="geminiPopupBtn"], [id*="aiFloat"] {
+    bottom: 84px !important;
+    left: 16px !important;
+    z-index: 45 !important;
+    box-shadow: 0 8px 25px -4px rgba(139, 92, 246, 0.55) !important;
+    border: 1.5px solid rgba(255, 255, 255, 0.25) !important;
+  }
+
+  /* نعومة فتح النوافذ المنبثقة والتبويبات */
+  @keyframes nativeFadeIn {
+    from { opacity: 0; transform: translateY(6px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+  .tab-content, [id*="View"]:not(.hidden) {
+    animation: nativeFadeIn 0.18s ease-out;
+  }
+</style>
+
 </head>
 <body class="bg-slate-100 dark:bg-slate-950 text-slate-800 dark:text-slate-100 min-h-screen selection:bg-blue-600 selection:text-white">
 
@@ -10079,6 +10153,42 @@ window.forceRealZeroFactoryReset = async function() {
   } else {
     injectUpdateButton();
   }
+})();
+</script>
+
+
+<script id="alrida-perf-engine">
+(function() {
+  // أ. تقليم السجلات القديمة تلقائياً حتى لا يتضخم حجم appState ويبطئ التطبيق
+  function trimHeavyLogs() {
+    if (typeof appState !== "object" || !appState) return;
+    if (Array.isArray(appState.auditLogs) && appState.auditLogs.length > 150) {
+      appState.auditLogs = appState.auditLogs.slice(-150);
+    }
+    if (Array.isArray(appState.aiChatHistory) && appState.aiChatHistory.length > 40) {
+      appState.aiChatHistory = appState.aiChatHistory.slice(-40);
+    }
+    if (Array.isArray(appState.notifications) && appState.notifications.length > 60) {
+      appState.notifications = appState.notifications.slice(-60);
+    }
+  }
+  setInterval(trimHeavyLogs, 15000);
+
+  // ب. منع إعادة الرسم المتكرر في نفس اللحظة (Frame Throttling لسرعة 60 إطار/ثانية)
+  window.addEventListener("DOMContentLoaded", () => {
+    if (typeof window.renderAllViews === "function") {
+      const origRender = window.renderAllViews;
+      let renderScheduled = false;
+      window.renderAllViews = function(...args) {
+        if (renderScheduled) return;
+        renderScheduled = true;
+        requestAnimationFrame(() => {
+          origRender.apply(this, args);
+          renderScheduled = false;
+        });
+      };
+    }
+  });
 })();
 </script>
 
