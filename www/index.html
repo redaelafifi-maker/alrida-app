@@ -6519,7 +6519,7 @@ async function enrollRealHardwareBiometric() {
 
   const Bio = window.Capacitor ? {
   checkBiometry: () => window.Capacitor.nativePromise("BiometricAuth", "checkBiometry", {}),
-  authenticate: (opts) => window.Capacitor.nativePromise("BiometricAuth", "internalAuthenticate", opts)
+  authenticate: (opts) => window.Capacitor.nativePromise("BiometricAuth", "authenticate", opts)
 } : null;
   if (!Bio) {
     openHardwareBioStatusModal("خطأ في بيئة التشغيل", "❌ هذا التطبيق غير مبني عبر Capacitor ولا يدعم مستشعر البصمة.", true, enrollRealHardwareBiometric);
