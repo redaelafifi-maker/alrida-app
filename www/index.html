@@ -9637,5 +9637,57 @@ bootstrapAlRedaApp();
   setInterval(syncGeminiKeyWithState, 2000);
 })();
 </script>
+
+<script>
+(function() {
+  window.resetToCleanProductionDB = function(silent = false) {
+    if (!silent && !confirm("⚠️ هل تريد مسح جميع البيانات التجريبية (التجار، العمليات، الموظفين التجريبيين) والبدء بقاعدة بيانات نظيفة تماماً؟")) return;
+    
+    const owner = (appState.employees || []).find(e => e.role === "owner") || {
+      id: "owner-1", fullName: "رضا رمضان (صاحب المحل والمدير العام)", username: "admin", password: "123", role: "owner", active: true
+    };
+    const savedKey = appState.sharedGeminiKey || localStorage.getItem("ALRIDA_GEMINI_API_KEY") || "";
+
+    appState.merchants = [];
+    appState.customers = [];
+    appState.transactions = [];
+    appState.sales = [];
+    appState.purchases = [];
+    appState.epayTransactions = [];
+    appState.expenses = [];
+    appState.inventory = [];
+    appState.products = [];
+    appState.payrollLogs = [];
+    appState.auditLogs = [];
+    appState.employeeRequests = [];
+    appState.leaveRequests = [];
+    appState.pendingRequests = [];
+    appState.notifications = [];
+    appState.employees = [owner];
+    if (savedKey) appState.sharedGeminiKey = savedKey;
+
+    if (Array.isArray(appState.accounts)) {
+      appState.accounts.forEach(acc => { acc.openingBalance = 0; acc.balance = 0; });
+    }
+
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(appState));
+    if (typeof saveStateToIndexedDb === "function") saveStateToIndexedDb(appState);
+    if (typeof window.pushStateToCloud === "function") window.pushStateToCloud(appState, true);
+    if (typeof renderAllViews === "function") renderAllViews();
+    else if (typeof renderAll === "function") renderAll();
+    if (!silent && typeof showToast === "function") showToast("✨ تم تصفير قاعدة البيانات بنجاح! جاهز لإدخال بياناتك الحقيقية.", "success");
+  };
+
+  // تصفير تلقائي لمرة واحدة فقط عند أول تشغيل لهذه النسخة النظيفة
+  window.addEventListener("load", () => {
+    setTimeout(() => {
+      if (!localStorage.getItem("ALRIDA_CLEAN_DB_V1_DONE")) {
+        localStorage.setItem("ALRIDA_CLEAN_DB_V1_DONE", "1");
+        window.resetToCleanProductionDB(true);
+      }
+    }, 1500);
+  });
+})();
+</script>
 </body>
 </html>
