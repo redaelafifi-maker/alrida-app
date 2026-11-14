@@ -9417,10 +9417,16 @@ bootstrapAlRedaApp();
 </script>
 
 <!-- ALRIDA_CLOUD_SYNC_ENGINE -->
-<div id="alridaCloudBar" style="position:fixed;top:10px;left:10px;z-index:99999;display:flex;align-items:center;gap:8px;background:rgba(15,23,42,0.92);border:1px solid #3b82f6;padding:6px 12px;border-radius:999px;font-size:12px;color:#fff;">
-  <span id="cloudStatusDot" style="width:9px;height:9px;border-radius:50%;background:#22c55e;"></span>
-  <span id="cloudStatusText">متصل بالسحابة</span>
-  <button onclick="forcePullFromCloud()" style="background:#2563eb;color:#fff;border:none;border-radius:999px;padding:2px 8px;font-size:11px;">🔄 تحديث</button>
+<div id="alridaCloudBar" style="width:100%;background:#0f172a;border-bottom:1px solid #1e293b;padding:4px 10px;display:flex;align-items:center;justify-content:space-between;font-size:11px;color:#fff;box-sizing:border-box;">
+  <div style="display:flex;align-items:center;gap:6px;">
+    <span id="cloudStatusDot" style="width:8px;height:8px;border-radius:50%;background:#22c55e;"></span>
+    <span id="cloudStatusText">جاري الاتصال...</span>
+  </div>
+  <div style="display:flex;align-items:center;gap:6px;">
+    <button id="btnOpenLiveMonitor" onclick="openLiveMonitorModal()" style="background:#7c3aed;color:#fff;border:none;border-radius:6px;padding:2px 7px;font-size:10px;font-weight:bold;display:none;">👁️ مراقبة</button>
+    <button id="btnCleanResetNow" onclick="window.resetToCleanProductionDB(false)" style="background:#dc2626;color:#fff;border:none;border-radius:6px;padding:2px 7px;font-size:10px;font-weight:bold;display:none;">🧹 تصفير</button>
+    <button onclick="forcePullFromCloud()" style="background:#2563eb;color:#fff;border:none;border-radius:6px;padding:2px 7px;font-size:10px;">🔄 مزامنة</button>
+  </div>
 </div>
 <div id="addEmpModal" style="display:none;position:fixed;inset:0;z-index:100001;background:rgba(0,0,0,0.8);align-items:center;justify-content:center;padding:16px;">
   <div style="background:#0f172a;border:1px solid #334155;border-radius:16px;max-width:400px;width:100%;padding:20px;color:#fff;direction:rtl;">
@@ -9824,6 +9830,80 @@ bootstrapAlRedaApp();
     const modal = document.getElementById("liveMonitorModal");
     if (modal && modal.style.display === "flex") refreshLiveMonitorData();
   }, 3000);
+})();
+</script>
+
+<script>
+(function() {
+  // 1. تصفير فوري وانعكاس وقتي على الشاشة والسحابة
+  window.resetToCleanProductionDB = async function(silent = false) {
+    const owner = (appState.employees || []).find(e => e.role === "owner" || e.username === "admin") || {
+      id: "owner-1", fullName: "رضا رمضان (صاحب المحل والمدير العام)", username: "admin", password: "123", role: "owner", active: true
+    };
+    const savedKey = appState.sharedGeminiKey || localStorage.getItem("ALRIDA_GEMINI_API_KEY") || "";
+
+    Object.keys(appState).forEach(k => { if (Array.isArray(appState[k])) appState[k] = []; });
+    appState.employees = [owner];
+    if (savedKey) appState.sharedGeminiKey = savedKey;
+    if (Array.isArray(appState.accounts)) {
+      appState.accounts.forEach(a => { a.openingBalance = 0; a.balance = 0; });
+    }
+    if (appState.assets) {
+      Object.keys(appState.assets).forEach(k => { if (typeof appState.assets[k] === "number") appState.assets[k] = 0; });
+    }
+
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(appState));
+    if (typeof saveStateToIndexedDb === "function") await saveStateToIndexedDb(appState);
+    if (typeof renderAllViews === "function") renderAllViews();
+    else if (typeof renderAll === "function") renderAll();
+    if (typeof window.pushStateToCloud === "function") await window.pushStateToCloud(appState, true);
+    if (!silent && typeof showToast === "function") showToast("✨ تم تصفير كل البيانات والأرصدة وقتياً!", "success");
+  };
+
+  // 2. إجبار المساعد على التأكيد مرة واحدة فقط ثم التنفيذ الفوري في التطبيق
+  const origFetch = window.fetch;
+  window.fetch = async function(input, init) {
+    const url = typeof input === "string" ? input : (input && input.url) || "";
+    if (url.includes("://googleapis.com") && init && init.body) {
+      try {
+        const bodyObj = JSON.parse(init.body);
+        const rulePrompt = `أنت مساعد نظام الرضا لإدارة المحل. القاعدة الصارمة:
+1) عندما يطلب المدير أي تعديل أو حذف أو تصفير، اسأله للتأكيد مرة واحدة فقط باختصار شديد (مثال: هل أؤكد تصفير جميع الأرصدة والبيانات الآن؟).
+2) بمجرد أن يرد المدير بالموافقة (نعم / تمام / أكد / نفذ / ماشي)، نفّذ فوراً ولا تسأل مرة أخرى أبداً، وأرفق في نهاية ردك كتلة JSON واحدة بهذا الشكل الدقيق ليقوم النظام بتطبيقها وقتياً:
+{"actionType":"RESET_DATABASE"} للتصفير الشامل
+{"actionType":"DELETE_EMPLOYEE","employeeName":"الاسم"} لحذف موظف
+{"actionType":"DELETE_MERCHANT","merchantName":"الاسم"} لحذف تاجر
+{"actionType":"SET_ACCOUNT_BALANCE","accountName":"الخزينة أو المحفظة","amount":0} لتعديل رصيد حساب`;
+        bodyObj.systemInstruction = { parts: [{ text: rulePrompt }] };
+        init.body = JSON.stringify(bodyObj);
+      } catch (e) {}
+    }
+
+    const res = await origFetch.call(this, input, init);
+
+    if (url.includes("://googleapis.com")) {
+      try {
+        const clone = res.clone();
+        const data = await clone.json();
+        const reply = data?.candidates?.?.content?.parts?.?.text || "";
+        const match = reply.match(/\{[\s\S]*?"actionType"[\s\S]*?\}/);
+        if (match) {
+          const act = JSON.parse(match);
+          if (act.actionType === "RESET_DATABASE") await window.resetToCleanProductionDB(false);
+          else if (act.actionType === "DELETE_MERCHANT" && act.merchantName) {
+            appState.merchants = (appState.merchants || []).filter(m => !m.name.includes(act.merchantName));
+            if (typeof saveState === "function") saveState();
+            if (typeof renderAllViews === "function") renderAllViews();
+            if (typeof window.pushStateToCloud === "function") window.pushStateToCloud(appState, true);
+          } else if (typeof window.executeConfirmedSmartAction === "function") {
+            act.isAction = true;
+            window.executeConfirmedSmartAction(act);
+          }
+        }
+      } catch (e) {}
+    }
+    return res;
+  };
 })();
 </script>
 </body>
