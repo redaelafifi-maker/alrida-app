@@ -10135,5 +10135,64 @@ window.forceRealZeroFactoryReset = async function() {
 })();
 </script>
 
+
+<!-- زر التحديث العلوي الآمن -->
+<script id="alrida-quick-refresh">
+(function() {
+  function injectRefreshButton() {
+    if (document.getElementById("alridaTopRefreshBtn")) return;
+    const btn = document.createElement("button");
+    btn.id = "alridaTopRefreshBtn";
+    btn.innerHTML = "🔄 تحديث";
+    // وضع الزر في أعلى الشاشة جهة اليمين بأمان تام
+    btn.style.cssText = "position:fixed; top:12px; right:12px; z-index:99990; background:linear-gradient(135deg, #0ea5e9, #2563eb); color:#fff; border:1px solid rgba(255,255,255,0.4); padding:4px 10px; border-radius:999px; font-size:11px; font-weight:bold; font-family:inherit; box-shadow:0 3px 10px rgba(0,0,0,0.3); cursor:pointer;";
+    btn.addEventListener("click", () => { window.location.reload(true); });
+    document.body.appendChild(btn);
+  }
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", injectRefreshButton);
+  } else {
+    injectRefreshButton();
+  }
+})();
+</script>
+
+
+<script id="alrida-factory-reset-bridge">
+(function() {
+  const origFetch = window.fetch;
+  window.fetch = async function(...args) {
+    const res = await origFetch.apply(this, args);
+    try {
+      const url = args[0] || "";
+      if (typeof url === "string" && url.includes("googleapis.com")) {
+        const clone = res.clone();
+        const data = await clone.json();
+        const reply = data?.candidates?.[0]?.content?.parts?.[0]?.text || "";
+        if (reply.includes("factory_reset") || reply.includes("ضبط المصنع") || reply.includes("تصفير الخزينة")) {
+          if (typeof window.forceRealZeroFactoryReset === "function") {
+            await window.forceRealZeroFactoryReset();
+          } else if (typeof window.resetToCleanProductionDB === "function") {
+            window.resetToCleanProductionDB(true);
+          } else if (typeof appState === "object" && appState !== null) {
+            appState.invoices = [];
+            appState.merchants = [];
+            appState.suppliers = [];
+            appState.transactions = [];
+            appState.sales = [];
+            appState.purchases = [];
+            appState.expenses = [];
+            if (Array.isArray(appState.accounts)) appState.accounts.forEach(a => a.balance = 0);
+            if (typeof saveState === "function") saveState(false);
+            if (typeof renderAllViews === "function") renderAllViews();
+          }
+        }
+      }
+    } catch(e) {}
+    return res;
+  };
+})();
+</script>
+
 </body>
 </html>
