@@ -9612,5 +9612,30 @@ bootstrapAlRedaApp();
   };
 })();
 </script>
+
+<script>
+(function() {
+  function syncGeminiKeyWithState() {
+    const inp = document.getElementById("aiApiKeyInput");
+    const savedLocal = localStorage.getItem("ALRIDA_GEMINI_API_KEY") || localStorage.getItem("gemini_api_key") || "";
+    
+    // إذا كان المفتاح موجوداً في السحابة، ضعه في الجهاز تلقائياً
+    if (typeof appState !== "undefined" && appState.sharedGeminiKey && !savedLocal) {
+      localStorage.setItem("ALRIDA_GEMINI_API_KEY", appState.sharedGeminiKey);
+      localStorage.setItem("gemini_api_key", appState.sharedGeminiKey);
+      if (inp) inp.value = appState.sharedGeminiKey;
+    }
+    
+    // إذا أدخلت المفتاح على هاتفك، احفظه في appState ليتم رفعه للسحابة تلقائياً
+    if (inp && inp.value.trim() && typeof appState !== "undefined" && appState.sharedGeminiKey !== inp.value.trim()) {
+      appState.sharedGeminiKey = inp.value.trim();
+      localStorage.setItem("ALRIDA_GEMINI_API_KEY", appState.sharedGeminiKey);
+      if (typeof saveState === "function") saveState();
+      if (typeof window.pushStateToCloud === "function") window.pushStateToCloud(appState, true);
+    }
+  }
+  setInterval(syncGeminiKeyWithState, 2000);
+})();
+</script>
 </body>
 </html>
