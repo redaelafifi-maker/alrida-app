@@ -1668,15 +1668,12 @@ opacity: 1;
 <div>
 <label class="block text-xs font-bold mb-1 text-slate-300">النموذج المعتمد (Model)</label>
 <div class="flex gap-2">
-<select id="aiModelSelectInput" class="flex-1 rounded-xl border border-slate-700 bg-slate-800 px-3 py-2 text-xs font-extrabold text-cyan-300">
-<option value="gemini-4-argon">Gemini 4 Argon (الأقوى للتحليل والحسابات)</option>
-<option value="gemini-3.8-flash" selected>Gemini 3.8 Flash (الأحدث والأسرع)</option>
-<option value="gemini-3.7-flash">Gemini 3.7 Flash (سريع ومتطور)</option>
-<option value="gemini-3.6-flash">Gemini 3.6 Flash (متوازن)</option>
-<option value="gemini-3.5-flash">Gemini 3.5 Flash (قياسي)</option>
-<option value="gemini-3.5-flash-lite">Gemini 3.5 Flash-Lite (اقتصادي وخفيف)</option>
-<option value="gemini-2.5-pro">Gemini 2.5 Pro (احترافي)</option>
-<option value="gemini-2.5-flash">Gemini 2.5 Flash (مستقر)</option>
+<select id="aiModelSelectInput" class="rounded-xl border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 px-3 py-2 text-xs font-extrabold text-blue-600 dark:text-blue-300">
+  <option value="gemini-2.5-flash" selected>Gemini 2.5 Flash (الأسرع والأدق للتنفيذ)</option>
+  <option value="gemini-2.5-pro">Gemini 2.5 Pro (تحليل وحسابات متقدمة)</option>
+  <option value="gemini-2.0-flash">Gemini 2.0 Flash (سريع ومستقر)</option>
+  <option value="gemini-2.0-flash-lite">Gemini 2.0 Flash-Lite (خفيف وموفر)</option>
+  <option value="gemini-3.5-flash-lite">Gemini 3.5 Flash-Lite</option>
 </select>
 <button type="button" onclick="fetchAvailableGeminiModels()" class="px-3 py-2 rounded-xl bg-blue-600 text-white text-xs font-bold shrink-0">🔄 تحديث</button>
 </div>
@@ -9420,7 +9417,7 @@ bootstrapAlRedaApp();
 </script>
 
 <!-- ALRIDA_CLOUD_SYNC_ENGINE -->
-<div id="alridaCloudBar" style="position:fixed;bottom:14px;left:14px;z-index:99999;display:flex;align-items:center;gap:8px;background:rgba(15,23,42,0.92);border:1px solid #3b82f6;padding:6px 12px;border-radius:999px;font-size:12px;color:#fff;">
+<div id="alridaCloudBar" style="position:fixed;top:10px;left:10px;z-index:99999;display:flex;align-items:center;gap:8px;background:rgba(15,23,42,0.92);border:1px solid #3b82f6;padding:6px 12px;border-radius:999px;font-size:12px;color:#fff;">
   <span id="cloudStatusDot" style="width:9px;height:9px;border-radius:50%;background:#22c55e;"></span>
   <span id="cloudStatusText">متصل بالسحابة</span>
   <button onclick="forcePullFromCloud()" style="background:#2563eb;color:#fff;border:none;border-radius:999px;padding:2px 8px;font-size:11px;">🔄 تحديث</button>
@@ -9495,10 +9492,14 @@ bootstrapAlRedaApp();
   };
   window.deleteEmployeePermanently = (id) => {
     const emp = appState.employees.find(e => e.id === id);
-    if (!emp || emp.role === "owner" || !confirm("حذف " + emp.fullName + " نهائياً؟")) return;
+    if (!emp || emp.role === "owner") return;
     appState.employees = appState.employees.filter(e => e.id !== id);
-    if (typeof saveState === "function") saveState();
-    if (typeof renderAll === "function") renderAll();
+    if (typeof logAuditAndQueueSync === "function") logAuditAndQueueSync("حذف موظف نهائياً", emp.fullName);
+    else if (typeof saveState === "function") saveState();
+    if (typeof renderAllViews === "function") renderAllViews();
+    else if (typeof renderAll === "function") renderAll();
+    if (typeof showToast === "function") showToast("🗑️ تم حذف الموظف (" + emp.fullName + ") نهائياً!", "success");
+    if (window.pushStateToCloud) window.pushStateToCloud(appState, true);
   };
   setInterval(() => {
     const u = appState && appState.currentUser;
@@ -9573,6 +9574,43 @@ bootstrapAlRedaApp();
   }, 2500);
 })();
 
+</script>
+
+<script>
+(function() {
+  // ربط تنفيذ الأوامر الذكية مباشرة بالمزامنة السحابية وتحديث الواجهة
+  if (typeof window.executeConfirmedSmartAction === "function") {
+    const origExec = window.executeConfirmedSmartAction;
+    window.executeConfirmedSmartAction = function(act) {
+      const res = origExec.apply(this, arguments);
+      if (typeof saveState === "function") saveState();
+      if (typeof renderAllViews === "function") renderAllViews();
+      if (typeof window.pushStateToCloud === "function") window.pushStateToCloud(appState, true);
+      return res;
+    };
+  }
+
+  // اعتراض ردود المساعد الذكي لتنفيذ كتل JSON تلقائياً دون الاكتفاء بالكلام
+  const origFetch = window.fetch;
+  window.fetch = async function(...args) {
+    const response = await origFetch.apply(this, args);
+    const urlStr = String(args[0] || "");
+    if (urlStr.includes("://googleapis.com")) {
+      try {
+        const clone = response.clone();
+        const json = await clone.json();
+        const txt = json?.candidates?.[0]?.content?.parts?.[0]?.text || "";
+        const match = txt.match(/\{[\s\S]*"actionType"[\s\S]*\}/);
+        if (match && typeof window.executeConfirmedSmartAction === "function") {
+          const actObj = JSON.parse(match[0]);
+          actObj.isAction = true;
+          window.executeConfirmedSmartAction(actObj);
+        }
+      } catch (e) {}
+    }
+    return response;
+  };
+})();
 </script>
 </body>
 </html>
