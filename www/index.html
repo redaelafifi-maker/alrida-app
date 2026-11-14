@@ -9417,16 +9417,9 @@ bootstrapAlRedaApp();
 </script>
 
 <!-- ALRIDA_CLOUD_SYNC_ENGINE -->
-<div id="alridaCloudBar" style="width:100%;background:#0f172a;border-bottom:1px solid #1e293b;padding:4px 10px;display:flex;align-items:center;justify-content:space-between;font-size:11px;color:#fff;box-sizing:border-box;">
-  <div style="display:flex;align-items:center;gap:6px;">
-    <span id="cloudStatusDot" style="width:8px;height:8px;border-radius:50%;background:#22c55e;"></span>
-    <span id="cloudStatusText">جاري الاتصال...</span>
-  </div>
-  <div style="display:flex;align-items:center;gap:6px;">
-    <button id="btnOpenLiveMonitor" onclick="openLiveMonitorModal()" style="background:#7c3aed;color:#fff;border:none;border-radius:6px;padding:2px 7px;font-size:10px;font-weight:bold;display:none;">👁️ مراقبة</button>
-    <button id="btnCleanResetNow" onclick="window.resetToCleanProductionDB(false)" style="background:#dc2626;color:#fff;border:none;border-radius:6px;padding:2px 7px;font-size:10px;font-weight:bold;display:none;">🧹 تصفير</button>
-    <button onclick="forcePullFromCloud()" style="background:#2563eb;color:#fff;border:none;border-radius:6px;padding:2px 7px;font-size:10px;">🔄 مزامنة</button>
-  </div>
+<div id="alridaCloudBar" onclick="forcePullFromCloud()" title="حالة المزامنة" style="position:fixed;top:8px;left:8px;z-index:99999;pointer-events:auto;cursor:pointer;padding:4px;">
+  <span id="cloudStatusDot" style="width:10px;height:10px;border-radius:50%;background:#ef4444;display:block;box-shadow:0 0 6px rgba(0,0,0,0.6);border:1.5px solid #fff;"></span>
+  <span id="cloudStatusText" style="display:none;"></span>
 </div>
 <div id="addEmpModal" style="display:none;position:fixed;inset:0;z-index:100001;background:rgba(0,0,0,0.8);align-items:center;justify-content:center;padding:16px;">
   <div style="background:#0f172a;border:1px solid #334155;border-radius:16px;max-width:400px;width:100%;padding:20px;color:#fff;direction:rtl;">
