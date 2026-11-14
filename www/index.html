@@ -6519,7 +6519,7 @@ async function enrollRealHardwareBiometric() {
 
   const Bio = window.Capacitor ? {
   checkBiometry: () => window.Capacitor.nativePromise("BiometricAuth", "checkBiometry", {}),
-  authenticate: (opts) => window.Capacitor.nativePromise("BiometricAuth", "authenticate", opts)
+  authenticate: (opts) => window.Capacitor.nativePromise("BiometricAuth", "internalAuthenticate", opts)
 } : null;
   if (!Bio) {
     openHardwareBioStatusModal("خطأ في بيئة التشغيل", "❌ هذا التطبيق غير مبني عبر Capacitor ولا يدعم مستشعر البصمة.", true, enrollRealHardwareBiometric);
@@ -6548,7 +6548,7 @@ async function enrollRealHardwareBiometric() {
     openHardwareBioStatusModal("تم الربط بنجاح", "✅ تم تسجيل بصمة هاتفك الحقيقية وربطها بحسابك بنجاح!", false, enrollRealHardwareBiometric);
     if (typeof updateBiometricUIStatus === "function") updateBiometricUIStatus();
   } catch (err) {
-    openHardwareBioStatusModal("تم إلغاء أو رفض البصمة", "❌ لم يتم التعرف على البصمة أو تم الإلغاء.", true, enrollRealHardwareBiometric);
+    openHardwareBioStatusModal("تم إلغاء أو رفض البصمة", "❌ السبب: " + (err && (err.message || err.code || JSON.stringify(err))), true, enrollRealHardwareBiometric);
   }
 }
 
@@ -6601,7 +6601,7 @@ async function verifyRealHardwareBiometricLogin() {
     if (typeof closeAndroidBiometricScannerModal === "function") closeAndroidBiometricScannerModal();
     await completeUserLogin(emp, "بصمة الجهاز الحقيقية (Android Biometric)");
   } catch (err) {
-    openHardwareBioStatusModal("فشل التحقق من البصمة", "❌ تم رفض الدخول. تأكد من استخدام الإصبع المسجل على الجهاز.", true, verifyRealHardwareBiometricLogin);
+    openHardwareBioStatusModal("فشل التحقق من البصمة", "❌ السبب: " + (err && (err.message || err.code || JSON.stringify(err))), true, verifyRealHardwareBiometricLogin);
   }
 }
 
