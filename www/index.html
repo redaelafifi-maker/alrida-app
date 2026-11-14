@@ -9446,6 +9446,7 @@ bootstrapAlRedaApp();
       <label style="background:#1e293b;padding:8px;border-radius:8px;"><input type="checkbox" class="perm-chk" value="tab-emp-portal" checked> إرسال الطلبات</label>
       <label style="background:#1e293b;padding:8px;border-radius:8px;"><input type="checkbox" class="perm-chk" value="tab-inventory"> المخزن</label>
       <label style="background:#1e293b;padding:8px;border-radius:8px;"><input type="checkbox" class="perm-chk" value="tab-expenses"> المصروفات</label>
+      <label style="background:#1e293b;padding:8px;border-radius:8px;grid-column:span 2;border:1px solid #8b5cf6;"><input type="checkbox" class="perm-chk" value="ai-assistant"> 🤖 تفعيل المساعد الذكي (الرضا) لهذا الموظف</label>
     </div>
     <div style="display:flex;gap:8px;justify-content:flex-end;">
       <button onclick="document.getElementById('editEmpPermsModal').style.display='none'" style="background:#334155;color:#fff;border:none;border-radius:8px;padding:8px 14px;">إلغاء</button>
@@ -9687,6 +9688,142 @@ bootstrapAlRedaApp();
       }
     }, 1500);
   });
+})();
+</script>
+
+<div id="liveMonitorModal" style="display:none;position:fixed;inset:0;z-index:100002;background:rgba(0,0,0,0.85);align-items:center;justify-content:center;padding:16px;">
+  <div style="background:#0f172a;border:1px solid #3b82f6;border-radius:18px;max-width:460px;width:100%;padding:20px;color:#fff;direction:rtl;max-height:85vh;overflow-y:auto;">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
+      <h3 style="margin:0;font-size:17px;color:#60a5fa;">👁️ مراقبة نشاط الموظفين (مباشر)</h3>
+      <button onclick="document.getElementById('liveMonitorModal').style.display='none'" style="background:#334155;color:#fff;border:none;border-radius:8px;padding:6px 12px;cursor:pointer;">✕ إغلاق</button>
+    </div>
+    <p style="font-size:12px;color:#94a3b8;margin:0 0 12px 0;">تتبع تواجد الموظفين، الشاشة المفتوحة أمامهم، وآخر عملياتهم لحظة بلحظة:</p>
+    <div id="liveMonitorList" style="display:flex;flex-direction:column;gap:10px;"></div>
+  </div>
+</div>
+
+<script>
+(function() {
+  const PRESENCE_BASE = ["https:", "", "://firebaseio.com", "shops", "alrida_main_shop", "presence"].join("/");
+  const TAB_NAMES = {
+    "tab-dashboard": "الشاشة الرئيسية",
+    "tab-epay": "تحويل وسحب الكاش والفواتير",
+    "tab-sales": "تسجيل المبيعات",
+    "tab-purchases": "تسجيل المشتريات",
+    "tab-emp-portal": "بوابة الطلبات والإجازات",
+    "tab-inventory": "المخزن والأصناف",
+    "tab-expenses": "المصروفات",
+    "tab-ai": "المساعد الذكي"
+  };
+
+  // 1. التحكم في إظهار أو إخفاء زر المساعد الذكي حسب صلاحية كل موظف
+  setInterval(() => {
+    const u = appState && appState.currentUser;
+    const aiBtn = document.getElementById("geminiFloatingTriggerBtn");
+    if (!u || !aiBtn) return;
+    if (u.role === "owner") {
+      aiBtn.style.display = "flex";
+    } else {
+      const allowed = u.allowedTabs || [];
+      aiBtn.style.display = allowed.includes("ai-assistant") ? "flex" : "none";
+    }
+  }, 800);
+
+  // 2. إضافة زر "👁️ مراقبة الموظفين" للمدير في شريط السحابة العلوي
+  window.addEventListener("load", () => {
+    setTimeout(() => {
+      const bar = document.getElementById("alridaCloudBar");
+      if (bar && !document.getElementById("btnOpenLiveMonitor")) {
+        const btn = document.createElement("button");
+        btn.id = "btnOpenLiveMonitor";
+        btn.textContent = "👁️ مراقبة حية";
+        btn.style.cssText = "background:#8b5cf6;color:#fff;border:none;border-radius:999px;padding:2px 9px;font-size:11px;font-weight:bold;cursor:pointer;display:none;";
+        btn.onclick = openLiveMonitorModal;
+        bar.appendChild(btn);
+      }
+    }, 1000);
+  });
+
+  // 3. بث حالة الموظف الحالية للسحابة كل 3 ثوانٍ
+  setInterval(async () => {
+    const btnMon = document.getElementById("btnOpenLiveMonitor");
+    const u = appState && appState.currentUser;
+    if (btnMon) btnMon.style.display = (u && u.role === "owner") ? "inline-block" : "none";
+
+    if (!u || !navigator.onLine) return;
+    const activeSec = document.querySelector(".app-tab-section:not(.hidden)");
+    const currentTabId = activeSec ? activeSec.id : "tab-dashboard";
+    const tabLabel = TAB_NAMES[currentTabId] || currentTabId;
+
+    // جلب آخر عملية قام بها هذا الموظف من سجل المراجعة
+    let lastActionText = "تصفح النظام";
+    if (Array.isArray(appState.auditLogs) && appState.auditLogs.length > 0) {
+      const myLog = appState.auditLogs.find(l => (l.user || "").includes(u.fullName) || (l.actor || "").includes(u.fullName));
+      if (myLog) lastActionText = (myLog.action || myLog.title || "") + " - " + (myLog.details || "");
+    }
+
+    try {
+      await fetch(PRESENCE_BASE + "/" + encodeURIComponent(u.id) + ".json", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          id: u.id,
+          fullName: u.fullName,
+          role: u.role,
+          currentScreen: tabLabel,
+          lastAction: lastActionText,
+          lastSeen: Date.now()
+        })
+      });
+    } catch (e) {}
+  }, 3000);
+
+  // 4. عرض لوحة المراقبة الحية للمدير
+  window.openLiveMonitorModal = async function() {
+    document.getElementById("liveMonitorModal").style.display = "flex";
+    await refreshLiveMonitorData();
+  };
+
+  async function refreshLiveMonitorData() {
+    const listEl = document.getElementById("liveMonitorList");
+    if (!listEl) return;
+    try {
+      const res = await fetch(PRESENCE_BASE + ".json");
+      const data = await res.json();
+      if (!data) {
+        listEl.innerHTML = "<div style='text-align:center;color:#94a3b8;padding:20px;'>لا يوجد نشاط مسجل بعد.</div>";
+        return;
+      }
+      const now = Date.now();
+      const users = Object.values(data).filter(x => x && x.role !== "owner");
+      if (users.length === 0) {
+        listEl.innerHTML = "<div style='text-align:center;color:#94a3b8;padding:20px;'>لم يسجل أي موظف الدخول بعد.</div>";
+        return;
+      }
+      listEl.innerHTML = users.map(emp => {
+        const diffSec = Math.floor((now - (emp.lastSeen || 0)) / 1000);
+        const isOnline = diffSec <= 15;
+        const statusHtml = isOnline
+          ? "<span style='color:#22c55e;font-weight:bold;'>🟢 متصل الآن</span>"
+          : "<span style='color:#ef4444;'>🔴 غير متصل (منذ " + (diffSec < 60 ? diffSec + " ثانية" : Math.floor(diffSec/60) + " دقيقة") + ")</span>";
+        return `<div style="background:#1e293b;border:1px solid ${isOnline ? '#22c55e' : '#334155'};border-radius:12px;padding:12px;">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
+            <b style="font-size:14px;color:#f8fafc;">👤 ${emp.fullName}</b>
+            <span style="font-size:11px;">${statusHtml}</span>
+          </div>
+          <div style="font-size:12px;color:#93c5fd;margin-bottom:4px;">📱 الشاشة الحالية: <b>${emp.currentScreen || "الرئيسية"}</b></div>
+          <div style="font-size:11px;color:#cbd5e1;">⚡ آخر نشاط: ${emp.lastAction || "لا يوجد"}</div>
+        </div>`;
+      }).join("");
+    } catch (e) {
+      listEl.innerHTML = "<div style='color:#ef4444;'>تعذر جلب بيانات المراقبة.</div>";
+    }
+  }
+
+  setInterval(() => {
+    const modal = document.getElementById("liveMonitorModal");
+    if (modal && modal.style.display === "flex") refreshLiveMonitorData();
+  }, 3000);
 })();
 </script>
 </body>
