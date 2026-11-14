@@ -8383,19 +8383,12 @@ async function handleAiUserSubmission(text) {
   if (!q) return;
   const lastAiMsg = (appState?.aiChatHistory || []).slice().reverse().find(m => m.sender === "ai")?.text || "";
   const isConfirmWord = /^(اه|آه|ايوه|أيوة|نعم|متأكد|متاكد|تمام|نفذ|أكد|اكد|موافق|اه متأكد|اه اعمل ضبط مصنع|اعمل ضبط مصنع فورا)$/i.test(q);
-  const isDirectReset = /(اه اعمل ضبط مصنع|نعم اعمل ضبط مصنع|نفذ ضبط مصنع|ضبط مصنع فورا|فرمتة فورا)/i.test(q);
-
+  const isDirectReset = /(ضبط مصنع|تصفير البيانات|مسح كل البيانات|فرمتة|تصفير المحل|تصفير التطبيق)/i.test(q);
   if (isDirectReset || (isConfirmWord && /(ضبط مصنع|تصفير|مسح كافة بيانات)/i.test(lastAiMsg))) {
     const timeStr = nowISO().split(" ")[1];
     appState.aiChatHistory.push({ sender: "user", time: timeStr, text: q });
-    if (typeof window.resetToCleanProductionDB === "function") {
-      await window.resetToCleanProductionDB(false);
-    } else {
-      localStorage.clear();
-    }
-    appState.aiChatHistory.push({ sender: "ai", time: timeStr, text: "✅ تم تنفيذ ضبط المصنع وتصفير بيانات المحل بالكامل بنجاح يا باشمهندس رضا!" });
-    if (typeof saveState === "function") saveState(false);
-    if (typeof renderAllViews === "function") renderAllViews();
+    await window.forceRealZeroFactoryReset();
+    appState.aiChatHistory.push({ sender: "ai", time: timeStr, text: "✅ تم تنفيذ ضبط المصنع الفعلي وتصفير الخزينة والبنوك والتجار والفواتير إلى 0.00 ج.م بنجاح!" });
     renderAiAssistantView();
     return;
   }
@@ -9671,8 +9664,7 @@ bootstrapAlRedaApp();
 
 <script>
 (function() {
-  window.resetToCleanProductionDB = function(silent = false) {
-    if (!silent && !confirm("⚠️ هل تريد مسح جميع البيانات التجريبية (التجار، العمليات، الموظفين التجريبيين) والبدء بقاعدة بيانات نظيفة تماماً؟")) return;
+  window.resetToCleanProductionDB = function(silent = true) {
     
     const owner = (appState.employees || []).find(e => e.role === "owner") || {
       id: "owner-1", fullName: "رضا رمضان (صاحب المحل والمدير العام)", username: "admin", password: "123", role: "owner", active: true
@@ -9694,6 +9686,15 @@ bootstrapAlRedaApp();
     appState.leaveRequests = [];
     appState.pendingRequests = [];
     appState.notifications = [];
+    appState.invoices = [];
+    appState.suppliers = [];
+    appState.assetsAndGold = [];
+    appState.dailyClosings = [];
+    appState.doubleEntryJournal = [];
+    appState.merchantShortages = [];
+    appState.invoiceBalanceTransfers = [];
+    if (Array.isArray(appState.wallets)) appState.wallets.forEach(w => { w.openingBalance = 0; w.balance = 0; });
+    if (Array.isArray(appState.banks)) appState.banks.forEach(b => { b.openingBalance = 0; b.balance = 0; });
     appState.employees = [owner];
     if (savedKey) appState.sharedGeminiKey = savedKey;
 
@@ -9910,25 +9911,65 @@ bootstrapAlRedaApp();
         const clone = res.clone();
         const data = await clone.json();
         const reply = data?.candidates?.[0]?.content?.parts?.[0]?.text || "";
-        const match = reply.match(/\{[\s\S]*?"actionType"[\s\S]*?\}/);
-        if (match) {
-          const act = JSON.parse(match[0]);
-          if (act.actionType === "RESET_DATABASE") await window.resetToCleanProductionDB(false);
-          else if (act.actionType === "DELETE_MERCHANT" && act.merchantName) {
-            appState.merchants = (appState.merchants || []).filter(m => !m.name.includes(act.merchantName));
-            if (typeof saveState === "function") saveState();
+        if (reply.includes("RESET_DATABASE") || reply.includes("factory_reset") || reply.includes("ضبط المصنع للتطبيق بنجاح")) {
+          if (typeof window.resetToCleanProductionDB === "function") {
+            await window.resetToCleanProductionDB(true);
             if (typeof renderAllViews === "function") renderAllViews();
-            if (typeof window.pushStateToCloud === "function") window.pushStateToCloud(appState, true);
-          } else if (typeof window.executeConfirmedSmartAction === "function") {
-            act.isAction = true;
-            window.executeConfirmedSmartAction(act);
+          }
+        } else {
+          const match = reply.match(/\{[\s\S]*?"actionType"[\s\S]*?\}/);
+          if (match) {
+            const act = JSON.parse(match[0]);
+            if (act.actionType === "DELETE_MERCHANT" && act.merchantName) {
+              appState.merchants = (appState.merchants || []).filter(m => !m.name.includes(act.merchantName));
+              if (typeof saveState === "function") saveState();
+              if (typeof renderAllViews === "function") renderAllViews();
+              if (typeof window.pushStateToCloud === "function") window.pushStateToCloud(appState, true);
+            } else if (typeof window.executeConfirmedSmartAction === "function") {
+              act.isAction = true;
+              window.executeConfirmedSmartAction(act);
+            }
           }
         }
-      } catch (e) {}
+      } catch (e) { console.error(e); }
     }
     return res;
   };
 })();
+
+window.forceRealZeroFactoryReset = async function() {
+  try {
+    if (typeof window.resetToCleanProductionDB === "function") {
+      await window.resetToCleanProductionDB(true);
+    }
+    if (typeof appState === "object" && appState !== null) {
+      // تصفير جميع المصفوفات (الفواتير، التجار، الموردين، العمليات، المصروفات، المخزون)
+      for (const k of Object.keys(appState)) {
+        if (Array.isArray(appState[k]) && k !== "aiChatHistory") {
+          appState[k] = [];
+        } else if (typeof appState[k] === "number") {
+          appState[k] = 0;
+        } else if (typeof appState[k] === "object" && appState[k] !== null && k !== "meta") {
+          for (const subK of Object.keys(appState[k])) {
+            if (typeof appState[k][subK] === "number") appState[k][subK] = 0;
+            if (Array.isArray(appState[k][subK])) appState[k][subK] = [];
+            if (typeof appState[k][subK] === "object" && appState[k][subK] !== null) {
+              if ("balance" in appState[k][subK]) appState[k][subK].balance = 0;
+              if ("amount" in appState[k][subK]) appState[k][subK].amount = 0;
+            }
+          }
+        }
+      }
+      // التأكد من تصفير الحسابات والبنوك والخزينة لو كانت داخل مصفوفة accounts أو wallets
+      if (Array.isArray(appState.accounts)) appState.accounts.forEach(a => a.balance = 0);
+      if (Array.isArray(appState.wallets)) appState.wallets.forEach(w => w.balance = 0);
+    }
+    if (typeof saveState === "function") saveState(false);
+    if (typeof window.pushStateToCloud === "function") await window.pushStateToCloud(appState, true);
+    if (typeof renderAllViews === "function") renderAllViews();
+  } catch (e) { console.error(e); }
+};
+
 </script>
 </body>
 </html>
