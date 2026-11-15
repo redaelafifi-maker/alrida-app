@@ -9716,7 +9716,8 @@ bootstrapAlRedaApp();
 
 <script>
 (function() {
-  const PRESENCE_BASE = ["https:", "", "://firebaseio.com", "shops", "alrida_main_shop", "presence"].join("/");
+  // تم إيقاف مراقبة الحضور السحابية القديمة؛ كانت ترسل بيانات الموظفين إلى endpoint غير مصادق عليه.
+  const PRESENCE_BASE = null;
   const TAB_NAMES = {
     "tab-dashboard": "الشاشة الرئيسية",
     "tab-epay": "تحويل وسحب الكاش والفواتير",
@@ -9758,6 +9759,7 @@ bootstrapAlRedaApp();
 
   // 3. بث حالة الموظف الحالية للسحابة كل 3 ثوانٍ
   setInterval(async () => {
+    if (!window.__ALREDA_PRESENCE_SYNC_ENABLED__ || !PRESENCE_BASE) return;
     const btnMon = document.getElementById("btnOpenLiveMonitor");
     const u = appState && appState.currentUser;
     if (btnMon) btnMon.style.display = (u && u.role === "owner") ? "inline-block" : "none";
@@ -9799,6 +9801,10 @@ bootstrapAlRedaApp();
   async function refreshLiveMonitorData() {
     const listEl = document.getElementById("liveMonitorList");
     if (!listEl) return;
+    if (!window.__ALREDA_PRESENCE_SYNC_ENABLED__ || !PRESENCE_BASE) {
+      listEl.innerHTML = "<div style='text-align:center;color:#f59e0b;padding:20px;'>المراقبة السحابية متوقفة مؤقتاً حتى إعداد تسجيل الدخول وقواعد Firebase الآمنة.</div>";
+      return;
+    }
     try {
       const res = await fetch(PRESENCE_BASE + ".json");
       const data = await res.json();
