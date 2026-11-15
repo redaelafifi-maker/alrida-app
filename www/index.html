@@ -1816,7 +1816,7 @@ opacity: 1;
 <div class="lg:col-span-6 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-5 shadow-sm space-y-4">
 <div class="border-b border-slate-200 dark:border-slate-800 pb-2.5">
 <h3 class="text-base font-extrabold text-slate-900 dark:text-white">☁️ الربط السحابي المركزي بين الهواتف (Firebase / REST API)</h3>
-<p class="text-xs text-slate-500">ربط هاتف صاحب المحل بهواتف الموظفين عبر قاعدة بيانات مركزية ومزامنة العمليات بمعرف فريد UUID</p>
+<p class="text-xs text-amber-600 dark:text-amber-400">المزامنة متوقفة مؤقتاً لحماية البيانات. سيتم تفعيلها بعد إعداد تسجيل الدخول وقواعد Firebase الآمنة؛ لا تفتح القراءة أو الكتابة للعامة.</p>
 </div>
 
 <form id="cloudSyncConfigForm" class="space-y-3">
@@ -3246,10 +3246,7 @@ read: false
 
 function logAuditAndQueueSync(actionType, beforeVal, afterVal, reason) {
 const opUuid = genUUID('SYNC');
-const isOnline = appState.meta.onlineMode;
-const syncStatusText = isOnline ? 'تمت المزامنة' : 'بانتظار المزامنة';
 const userLabel = appState.currentUser ? appState.currentUser.fullName : 'النظام';
-
 const auditEntry = {
 id: opUuid,
 time: nowISO(),
@@ -3259,67 +3256,35 @@ beforeVal: String(beforeVal),
 afterVal: String(afterVal),
 reason: String(reason || 'عملية معتمدة'),
 device: appState.selectedPortalMode === 'employee' ? 'هاتف الموظف (Android)' : 'جهاز صاحب المحل',
-syncStatus: syncStatusText
+syncStatus: 'محفوظة محلياً - بانتظار المزامنة الآمنة',
+branchId: appState.meta.branch ? appState.meta.branch.id : 'BR-001'
 };
-auditEntry.branchId = appState.meta.branch ? appState.meta.branch.id : 'BR-001';
 appState.auditLogs.unshift(auditEntry);
-
-if (!isOnline) {
 appState.syncQueue.push({
 uuid: opUuid,
 timestamp: nowISO(),
 actionType: actionType,
-summary: afterVal
+summary: afterVal,
+auditEntry: auditEntry
 });
-} else {
-appState.syncedOpUuids.push(opUuid);
-pushToCloudServerIfConfigured(auditEntry);
-}
 saveState(true);
 }
 
 async function pushToCloudServerIfConfigured(payloadObj) {
-const cfg = appState.meta.cloudConfig;
-if (!cfg || !cfg.endpointUrl || !cfg.endpointUrl.startsWith('https://')) return;
-try {
-const url = cfg.endpointUrl.replace(/\/+$/, '') + '/' + (cfg.shopId || 'ALREDA_MAIN_SHOP') + '/operations.json';
-await fetch(url, {
-method: 'POST',
-headers: { 'Content-Type': 'application/json' },
-body: JSON.stringify(payloadObj)
-});
-appState.meta.cloudConfig.lastSyncTime = nowISO();
-} catch (e) {}
+  // لا نرسل عمليات إلى REST endpoint مجهول أو غير مصادق عليه.
+  // سيتم تفعيل الإرسال بعد تنفيذ Firebase Authentication وقواعد الأمان.
+  return false;
 }
 
 // مزامنة العمليات المعلقة مرة واحدة فقط عند عودة الإنترنت (البند 2-ج و 30-ج)
 async function flushOfflineSyncQueue() {
-if (!appState.meta.onlineMode) {
-showToast('الجهاز حالياً في وضع عدم الاتصال بالإنترنت. العمليات محفوظة محلياً بانتظار المزامنة.', 'warning');
-return 0;
-}
-if (appState.syncQueue.length === 0) {
-showToast('جميع العمليات متزامنة بالفعل ولا توجد عمليات معلقة.', 'info');
-return 0;
-}
-let syncedCount = 0;
-const remaining = [];
-for (const item of appState.syncQueue) {
-// منع إرسال العملية مرتين باستخدام UUID الفريد
-if (!appState.syncedOpUuids.includes(item.uuid)) {
-appState.syncedOpUuids.push(item.uuid);
-const logMatch = appState.auditLogs.find(a => a.id === item.uuid);
-if (logMatch) logMatch.syncStatus = 'تمت المزامنة بعد عودة الاتصال';
-await pushToCloudServerIfConfigured(item);
-syncedCount++;
-}
-}
-appState.syncQueue = remaining;
-addOwnerNotification('نجاح المزامنة السحابية', `تمت مزامنة ${syncedCount} عملية معلقة بنجاح مرة واحدة دون تكرار.`, 'tab-reports');
-saveState(true);
-renderAllViews();
-showToast(`✅ تمت مزامنة ${syncedCount} عملية معلقة بنجاح مرة واحدة فقط`, 'success');
-return syncedCount;
+  const pending = Array.isArray(appState.syncQueue) ? appState.syncQueue.length : 0;
+  if (!pending) {
+    showToast('لا توجد عمليات معلقة للمزامنة.', 'info');
+    return 0;
+  }
+  showToast('عملياتك محفوظة على هذا الهاتف. المزامنة متوقفة مؤقتاً حتى تفعيل المصادقة وقواعد Firebase الآمنة؛ لم يتم حذف أي عملية.', 'warning');
+  return 0;
 }
 
 // نافذة التأكيد للعمليات الحساسة (البند 29 و 34)
@@ -9625,62 +9590,20 @@ bootstrapAlRedaApp();
       if ((tx.includes("صافي الربح") || tx.includes("الأرباح") || tx.includes("ربح اليوم") || tx.includes("رأس المال")) && c.children.length <= 4) c.style.display = "none";
     });
   }, 1000);
-  const ENDPOINT = ["https:", "", "://firebaseio.com", "shops", "alrida_main_shop", "state.json"].join("/");
-  const DEV_ID = localStorage.getItem("ALRIDA_DEV_ID") || ("d_" + Math.random().toString(36).slice(2, 9));
-  localStorage.setItem("ALRIDA_DEV_ID", DEV_ID);
-  let lastTs = Number(localStorage.getItem("ALRIDA_LAST_SYNC_TS") || 0), knownReqs = -1, timer = null;
+  // المحرك القديم كان يكتب الحالة كاملة إلى عنوان Firebase غير صحيح وبلا مصادقة.
+  // تم إيقاف أي اتصال شبكي حتى إعداد Firebase Authentication وقواعد أمان مقيّدة.
   window._isApplyingCloudState = false;
-  const reqCount = (st) => !st ? 0 : (st.employeeRequests?.length||0) + (st.leaveRequests?.length||0) + (st.pendingRequests?.length||0) + (st.notifications?.length||0);
-  window.pushStateToCloud = (st, imm = false) => {
-    clearTimeout(timer);
-    timer = setTimeout(async () => {
-      try {
-        document.getElementById("cloudStatusText").textContent = "جاري المزامنة...";
-        const ts = Date.now(), clean = Object.assign({}, st); delete clean.currentUser;
-        const r = await fetch(ENDPOINT, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ updatedAt: ts, updatedBy: DEV_ID, data: clean }) });
-        if (!r.ok) throw 0;
-        lastTs = ts; localStorage.setItem("ALRIDA_LAST_SYNC_TS", String(ts)); knownReqs = reqCount(clean);
-        document.getElementById("cloudStatusDot").style.background = "#22c55e";
-        document.getElementById("cloudStatusText").textContent = "مُزامَن ✓";
-      } catch (e) {
-        document.getElementById("cloudStatusDot").style.background = "#ef4444";
-        document.getElementById("cloudStatusText").textContent = "أوفلاين";
-      }
-    }, imm ? 50 : 400);
+  window.pushStateToCloud = async function() {
+    const dot = document.getElementById("cloudStatusDot");
+    const label = document.getElementById("cloudStatusText");
+    if (dot) dot.style.background = "#f59e0b";
+    if (label) label.textContent = "المزامنة الآمنة قيد الإعداد";
+    return false;
   };
-  window.forcePullFromCloud = async () => {
-    try {
-      const r = await fetch(ENDPOINT), rem = await r.json();
-      if (rem && rem.data) applyRemote(rem, true);
-      else await window.pushStateToCloud(appState, true);
-    } catch (e) {}
+  window.forcePullFromCloud = async function() {
+    if (typeof showToast === "function") showToast("المزامنة السحابية متوقفة مؤقتاً لحماية البيانات حتى تفعيل تسجيل الدخول وقواعد الأمان.", "warning");
+    return false;
   };
-  function applyRemote(rem, force = false) {
-    if (!rem || !rem.data || (!force && (rem.updatedBy === DEV_ID || rem.updatedAt <= lastTs))) return;
-    window._isApplyingCloudState = true;
-    try {
-      const me = appState.currentUser, newRc = reqCount(rem.data);
-      Object.assign(appState, rem.data);
-      if (me) appState.currentUser = me;
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(appState));
-      lastTs = rem.updatedAt || Date.now(); localStorage.setItem("ALRIDA_LAST_SYNC_TS", String(lastTs));
-      if (typeof renderAll === "function") renderAll();
-      if (me && me.role === "owner" && knownReqs !== -1 && newRc > knownReqs) {
-        document.getElementById("adminIncomingReqText").textContent = "وصل طلب جديد من الموظف عبر السحابة.";
-        document.getElementById("adminIncomingReqBanner").style.display = "block";
-      }
-      knownReqs = newRc;
-      document.getElementById("cloudStatusText").textContent = "مُزامَن ✓";
-    } finally { window._isApplyingCloudState = false; }
-  }
-  setInterval(async () => {
-    if (!navigator.onLine) return;
-    try {
-      const r = await fetch(ENDPOINT), rem = await r.json();
-      if (rem && rem.data && rem.updatedAt > lastTs && rem.updatedBy !== DEV_ID) applyRemote(rem);
-      else if (!rem) window.pushStateToCloud(appState, true);
-    } catch (e) {}
-  }, 2500);
 })();
 
 </script>
@@ -9722,35 +9645,15 @@ bootstrapAlRedaApp();
 })();
 </script>
 
-<script>
-(function() {
-  function syncGeminiKeyWithState() {
-    const inp = document.getElementById("aiApiKeyInput");
-    const savedLocal = localStorage.getItem("ALRIDA_GEMINI_API_KEY") || localStorage.getItem("gemini_api_key") || "";
-    
-    // إذا كان المفتاح موجوداً في السحابة، ضعه في الجهاز تلقائياً
-    if (typeof appState !== "undefined" && appState.sharedGeminiKey && !savedLocal) {
-      localStorage.setItem("ALRIDA_GEMINI_API_KEY", appState.sharedGeminiKey);
-      localStorage.setItem("gemini_api_key", appState.sharedGeminiKey);
-      if (inp) inp.value = appState.sharedGeminiKey;
-    }
-    
-    // إذا أدخلت المفتاح على هاتفك، احفظه في appState ليتم رفعه للسحابة تلقائياً
-    if (inp && inp.value.trim() && typeof appState !== "undefined" && appState.sharedGeminiKey !== inp.value.trim()) {
-      appState.sharedGeminiKey = inp.value.trim();
-      localStorage.setItem("ALRIDA_GEMINI_API_KEY", appState.sharedGeminiKey);
-      if (typeof saveState === "function") saveState();
-      if (typeof window.pushStateToCloud === "function") window.pushStateToCloud(appState, true);
-    }
-  }
-  setInterval(syncGeminiKeyWithState, 2000);
-})();
-</script>
+<!-- تمت إزالة مزامنة مفاتيح Gemini بين الأجهزة؛ مفاتيح API أسرار محلية ولا تدخل appState المشترك. -->
 
 <script>
 (function() {
   window.resetToCleanProductionDB = function(silent = true) {
-    
+    if (!window.__ALREDA_ALLOW_DESTRUCTIVE_RESET__) {
+      if (typeof showToast === "function") showToast("⛔ التصفير معطّل لحماية بيانات المحل. لا يمكن تنفيذه من المساعد حالياً.", "warning");
+      return false;
+    }
     const owner = (appState.employees || []).find(e => e.role === "owner") || {
       id: "owner-1", fullName: "رضا رمضان (صاحب المحل والمدير العام)", username: "admin", password: "123", role: "owner", active: true
     };
@@ -9795,15 +9698,8 @@ bootstrapAlRedaApp();
     if (!silent && typeof showToast === "function") showToast("✨ تم تصفير قاعدة البيانات بنجاح! جاهز لإدخال بياناتك الحقيقية.", "success");
   };
 
-  // تصفير تلقائي لمرة واحدة فقط عند أول تشغيل لهذه النسخة النظيفة
-  window.addEventListener("load", () => {
-    setTimeout(() => {
-      if (!localStorage.getItem("ALRIDA_CLEAN_DB_V1_DONE")) {
-        localStorage.setItem("ALRIDA_CLEAN_DB_V1_DONE", "1");
-        window.resetToCleanProductionDB(true);
-      }
-    }, 1500);
-  });
+  // تم تعطيل التصفير التلقائي نهائياً حفاظاً على بيانات المحل.
+  // أي عملية تصفير ستظل محظورة حتى إضافة شاشة تأكيد إدارية صريحة وآمنة.
 })();
 </script>
 
@@ -9820,7 +9716,8 @@ bootstrapAlRedaApp();
 
 <script>
 (function() {
-  const PRESENCE_BASE = ["https:", "", "://firebaseio.com", "shops", "alrida_main_shop", "presence"].join("/");
+  // تم إيقاف مراقبة الحضور السحابية القديمة؛ كانت ترسل بيانات الموظفين إلى endpoint غير مصادق عليه.
+  const PRESENCE_BASE = null;
   const TAB_NAMES = {
     "tab-dashboard": "الشاشة الرئيسية",
     "tab-epay": "تحويل وسحب الكاش والفواتير",
@@ -9862,6 +9759,7 @@ bootstrapAlRedaApp();
 
   // 3. بث حالة الموظف الحالية للسحابة كل 3 ثوانٍ
   setInterval(async () => {
+    if (!window.__ALREDA_PRESENCE_SYNC_ENABLED__ || !PRESENCE_BASE) return;
     const btnMon = document.getElementById("btnOpenLiveMonitor");
     const u = appState && appState.currentUser;
     if (btnMon) btnMon.style.display = (u && u.role === "owner") ? "inline-block" : "none";
@@ -9903,6 +9801,10 @@ bootstrapAlRedaApp();
   async function refreshLiveMonitorData() {
     const listEl = document.getElementById("liveMonitorList");
     if (!listEl) return;
+    if (!window.__ALREDA_PRESENCE_SYNC_ENABLED__ || !PRESENCE_BASE) {
+      listEl.innerHTML = "<div style='text-align:center;color:#f59e0b;padding:20px;'>المراقبة السحابية متوقفة مؤقتاً حتى إعداد تسجيل الدخول وقواعد Firebase الآمنة.</div>";
+      return;
+    }
     try {
       const res = await fetch(PRESENCE_BASE + ".json");
       const data = await res.json();
@@ -9947,6 +9849,10 @@ bootstrapAlRedaApp();
 (function() {
   // 1. تصفير فوري وانعكاس وقتي على الشاشة والسحابة
   window.resetToCleanProductionDB = async function(silent = false) {
+    if (!window.__ALREDA_ALLOW_DESTRUCTIVE_RESET__) {
+      if (typeof showToast === "function") showToast("⛔ التصفير معطّل لحماية بيانات المحل. لا يمكن تنفيذه من المساعد حالياً.", "warning");
+      return false;
+    }
     const owner = (appState.employees || []).find(e => e.role === "owner" || e.username === "admin") || {
       id: "owner-1", fullName: "رضا رمضان (صاحب المحل والمدير العام)", username: "admin", password: "123", role: "owner", active: true
     };
@@ -10023,6 +9929,10 @@ bootstrapAlRedaApp();
 })();
 
 window.forceRealZeroFactoryReset = async function() {
+  if (!window.__ALREDA_ALLOW_DESTRUCTIVE_RESET__) {
+    if (typeof showToast === "function") showToast("⛔ ضبط المصنع معطّل لحماية بيانات المحل.", "warning");
+    return false;
+  }
   try {
     if (typeof window.resetToCleanProductionDB === "function") {
       await window.resetToCleanProductionDB(true);
