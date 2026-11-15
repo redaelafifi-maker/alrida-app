@@ -3157,11 +3157,20 @@ resolve(null);
 
 async function saveStateToIndexedDb(stateObj) {
 const db = await openIndexedDb();
-if (!db) return;
-try {
-const tx = db.transaction(IDB_STORE, 'readwrite');
-tx.objectStore(IDB_STORE).put(JSON.parse(JSON.stringify(stateObj)), 'MAIN_STATE');
-} catch (e) {}
+if (!db) return false;
+return new Promise((resolve) => {
+  let tx;
+  try {
+    tx = db.transaction(IDB_STORE, 'readwrite');
+    tx.objectStore(IDB_STORE).put(JSON.parse(JSON.stringify(stateObj)), 'MAIN_STATE');
+    tx.oncomplete = () => { try { db.close(); } catch (e) {} resolve(true); };
+    tx.onerror = () => { try { db.close(); } catch (e) {} resolve(false); };
+    tx.onabort = () => { try { db.close(); } catch (e) {} resolve(false); };
+  } catch (e) {
+    try { db.close(); } catch (closeError) {}
+    resolve(false);
+  }
+});
 }
 
 const syncChannel = (typeof BroadcastChannel !== 'undefined') ? new BroadcastChannel('ALREDA_REALTIME_SYNC_CHANNEL') : null;
@@ -8472,8 +8481,8 @@ async function handleAiUserSubmission(text) {
   if (isDirectReset || (isConfirmWord && /(ضبط مصنع|تصفير|مسح كافة بيانات)/i.test(lastAiMsg))) {
     const timeStr = nowISO().split(" ")[1];
     appState.aiChatHistory.push({ sender: "user", time: timeStr, text: q });
-    await window.forceRealZeroFactoryReset();
-    appState.aiChatHistory.push({ sender: "ai", time: timeStr, text: "✅ تم تنفيذ ضبط المصنع الفعلي وتصفير الخزينة والبنوك والتجار والفواتير إلى 0.00 ج.م بنجاح!" });
+    appState.aiChatHistory.push({ sender: "ai", time: timeStr, text: "تم إيقاف ضبط المصنع من المساعد مؤقتاً لحماية بيانات المحل. لا يمكن تصفير أي بيانات أو أرصدة بأمر محادثة." });
+    saveState(false);
     renderAiAssistantView();
     return;
   }
@@ -9686,40 +9695,7 @@ bootstrapAlRedaApp();
 </script>
 
 <script>
-(function() {
-  // ربط تنفيذ الأوامر الذكية مباشرة بالمزامنة السحابية وتحديث الواجهة
-  if (typeof window.executeConfirmedSmartAction === "function") {
-    const origExec = window.executeConfirmedSmartAction;
-    window.executeConfirmedSmartAction = function(act) {
-      const res = origExec.apply(this, arguments);
-      if (typeof saveState === "function") saveState();
-      if (typeof renderAllViews === "function") renderAllViews();
-      if (typeof window.pushStateToCloud === "function") window.pushStateToCloud(appState, true);
-      return res;
-    };
-  }
-
-  // اعتراض ردود المساعد الذكي لتنفيذ كتل JSON تلقائياً دون الاكتفاء بالكلام
-  const origFetch = window.fetch;
-  window.fetch = async function(...args) {
-    const response = await origFetch.apply(this, args);
-    const urlStr = String(args[0] || "");
-    if (urlStr.includes("://googleapis.com")) {
-      try {
-        const clone = response.clone();
-        const json = await clone.json();
-        const txt = json?.candidates?.[0]?.content?.parts?.[0]?.text || "";
-        const match = txt.match(/\{[\s\S]*"actionType"[\s\S]*\}/);
-        if (match && typeof window.executeConfirmedSmartAction === "function") {
-          const actObj = JSON.parse(match[0]);
-          actObj.isAction = true;
-          window.executeConfirmedSmartAction(actObj);
-        }
-      } catch (e) {}
-    }
-    return response;
-  };
-})();
+// تعطيل اعتراض ردود Gemini التي كانت تنفذ أوامر JSON دون موافقة صريحة.
 </script>
 
 <script>
@@ -9749,61 +9725,12 @@ bootstrapAlRedaApp();
 
 <script>
 (function() {
-  window.resetToCleanProductionDB = function(silent = true) {
-    
-    const owner = (appState.employees || []).find(e => e.role === "owner") || {
-      id: "owner-1", fullName: "رضا رمضان (صاحب المحل والمدير العام)", username: "admin", password: "123", role: "owner", active: true
-    };
-    const savedKey = appState.sharedGeminiKey || localStorage.getItem("ALRIDA_GEMINI_API_KEY") || "";
-
-    appState.merchants = [];
-    appState.customers = [];
-    appState.transactions = [];
-    appState.sales = [];
-    appState.purchases = [];
-    appState.epayTransactions = [];
-    appState.expenses = [];
-    appState.inventory = [];
-    appState.products = [];
-    appState.payrollLogs = [];
-    appState.auditLogs = [];
-    appState.employeeRequests = [];
-    appState.leaveRequests = [];
-    appState.pendingRequests = [];
-    appState.notifications = [];
-    appState.invoices = [];
-    appState.suppliers = [];
-    appState.assetsAndGold = [];
-    appState.dailyClosings = [];
-    appState.doubleEntryJournal = [];
-    appState.merchantShortages = [];
-    appState.invoiceBalanceTransfers = [];
-    if (Array.isArray(appState.wallets)) appState.wallets.forEach(w => { w.openingBalance = 0; w.balance = 0; });
-    if (Array.isArray(appState.banks)) appState.banks.forEach(b => { b.openingBalance = 0; b.balance = 0; });
-    appState.employees = [owner];
-    if (savedKey) appState.sharedGeminiKey = savedKey;
-
-    if (Array.isArray(appState.accounts)) {
-      appState.accounts.forEach(acc => { acc.openingBalance = 0; acc.balance = 0; });
-    }
-
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(appState));
-    if (typeof saveStateToIndexedDb === "function") saveStateToIndexedDb(appState);
-    if (typeof window.pushStateToCloud === "function") window.pushStateToCloud(appState, true);
-    if (typeof renderAllViews === "function") renderAllViews();
-    else if (typeof renderAll === "function") renderAll();
-    if (!silent && typeof showToast === "function") showToast("✨ تم تصفير قاعدة البيانات بنجاح! جاهز لإدخال بياناتك الحقيقية.", "success");
+  // Factory reset is intentionally disabled until a separately authenticated,
+  // backed-up owner-only recovery workflow is implemented.
+  window.resetToCleanProductionDB = function() {
+    if (typeof showToast === "function") showToast("ضبط المصنع متوقف مؤقتاً لحماية بيانات المحل.", "warning");
+    return false;
   };
-
-  // تصفير تلقائي لمرة واحدة فقط عند أول تشغيل لهذه النسخة النظيفة
-  window.addEventListener("load", () => {
-    setTimeout(() => {
-      if (!localStorage.getItem("ALRIDA_CLEAN_DB_V1_DONE")) {
-        localStorage.setItem("ALRIDA_CLEAN_DB_V1_DONE", "1");
-        window.resetToCleanProductionDB(true);
-      }
-    }, 1500);
-  });
 })();
 </script>
 
@@ -9944,117 +9871,7 @@ bootstrapAlRedaApp();
 </script>
 
 <script>
-(function() {
-  // 1. تصفير فوري وانعكاس وقتي على الشاشة والسحابة
-  window.resetToCleanProductionDB = async function(silent = false) {
-    const owner = (appState.employees || []).find(e => e.role === "owner" || e.username === "admin") || {
-      id: "owner-1", fullName: "رضا رمضان (صاحب المحل والمدير العام)", username: "admin", password: "123", role: "owner", active: true
-    };
-    const savedKey = appState.sharedGeminiKey || localStorage.getItem("ALRIDA_GEMINI_API_KEY") || "";
-
-    Object.keys(appState).forEach(k => { if (Array.isArray(appState[k])) appState[k] = []; });
-    appState.employees = [owner];
-    if (savedKey) appState.sharedGeminiKey = savedKey;
-    if (Array.isArray(appState.accounts)) {
-      appState.accounts.forEach(a => { a.openingBalance = 0; a.balance = 0; });
-    }
-    if (appState.assets) {
-      Object.keys(appState.assets).forEach(k => { if (typeof appState.assets[k] === "number") appState.assets[k] = 0; });
-    }
-
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(appState));
-    if (typeof saveStateToIndexedDb === "function") await saveStateToIndexedDb(appState);
-    if (typeof renderAllViews === "function") renderAllViews();
-    else if (typeof renderAll === "function") renderAll();
-    if (typeof window.pushStateToCloud === "function") await window.pushStateToCloud(appState, true);
-    if (!silent && typeof showToast === "function") showToast("✨ تم تصفير كل البيانات والأرصدة وقتياً!", "success");
-  };
-
-  // 2. إجبار المساعد على التأكيد مرة واحدة فقط ثم التنفيذ الفوري في التطبيق
-  const origFetch = window.fetch;
-  window.fetch = async function(input, init) {
-    const url = typeof input === "string" ? input : (input && input.url) || "";
-    if (url.includes("://googleapis.com") && init && init.body) {
-      try {
-        const bodyObj = JSON.parse(init.body);
-        const rulePrompt = `أنت مساعد نظام الرضا لإدارة المحل. القاعدة الصارمة:
-1) عندما يطلب المدير أي تعديل أو حذف أو تصفير، اسأله للتأكيد مرة واحدة فقط باختصار شديد (مثال: هل أؤكد تصفير جميع الأرصدة والبيانات الآن؟).
-2) بمجرد أن يرد المدير بالموافقة (نعم / تمام / أكد / نفذ / ماشي)، نفّذ فوراً ولا تسأل مرة أخرى أبداً، وأرفق في نهاية ردك كتلة JSON واحدة بهذا الشكل الدقيق ليقوم النظام بتطبيقها وقتياً:
-{"actionType":"RESET_DATABASE"} للتصفير الشامل
-{"actionType":"DELETE_EMPLOYEE","employeeName":"الاسم"} لحذف موظف
-{"actionType":"DELETE_MERCHANT","merchantName":"الاسم"} لحذف تاجر
-{"actionType":"SET_ACCOUNT_BALANCE","accountName":"الخزينة أو المحفظة","amount":0} لتعديل رصيد حساب`;
-        bodyObj.systemInstruction = { parts: [{ text: rulePrompt }] };
-        init.body = JSON.stringify(bodyObj);
-      } catch (e) {}
-    }
-
-    const res = await origFetch.call(this, input, init);
-
-    if (url.includes("googleapis.com")) {
-      try {
-        const clone = res.clone();
-        const data = await clone.json();
-        const reply = data?.candidates?.[0]?.content?.parts?.[0]?.text || "";
-        if (reply.includes("RESET_DATABASE") || reply.includes("factory_reset") || reply.includes("ضبط المصنع للتطبيق بنجاح")) {
-          if (typeof window.resetToCleanProductionDB === "function") {
-            await window.resetToCleanProductionDB(true);
-            if (typeof renderAllViews === "function") renderAllViews();
-          }
-        } else {
-          const match = reply.match(/\{[\s\S]*?"actionType"[\s\S]*?\}/);
-          if (match) {
-            const act = JSON.parse(match[0]);
-            if (act.actionType === "DELETE_MERCHANT" && act.merchantName) {
-              appState.merchants = (appState.merchants || []).filter(m => !m.name.includes(act.merchantName));
-              if (typeof saveState === "function") saveState();
-              if (typeof renderAllViews === "function") renderAllViews();
-              if (typeof window.pushStateToCloud === "function") window.pushStateToCloud(appState, true);
-            } else if (typeof window.executeConfirmedSmartAction === "function") {
-              act.isAction = true;
-              window.executeConfirmedSmartAction(act);
-            }
-          }
-        }
-      } catch (e) { console.error(e); }
-    }
-    return res;
-  };
-})();
-
-window.forceRealZeroFactoryReset = async function() {
-  try {
-    if (typeof window.resetToCleanProductionDB === "function") {
-      await window.resetToCleanProductionDB(true);
-    }
-    if (typeof appState === "object" && appState !== null) {
-      // تصفير جميع المصفوفات (الفواتير، التجار، الموردين، العمليات، المصروفات، المخزون)
-      for (const k of Object.keys(appState)) {
-        if (Array.isArray(appState[k]) && k !== "aiChatHistory") {
-          appState[k] = [];
-        } else if (typeof appState[k] === "number") {
-          appState[k] = 0;
-        } else if (typeof appState[k] === "object" && appState[k] !== null && k !== "meta") {
-          for (const subK of Object.keys(appState[k])) {
-            if (typeof appState[k][subK] === "number") appState[k][subK] = 0;
-            if (Array.isArray(appState[k][subK])) appState[k][subK] = [];
-            if (typeof appState[k][subK] === "object" && appState[k][subK] !== null) {
-              if ("balance" in appState[k][subK]) appState[k][subK].balance = 0;
-              if ("amount" in appState[k][subK]) appState[k][subK].amount = 0;
-            }
-          }
-        }
-      }
-      // التأكد من تصفير الحسابات والبنوك والخزينة لو كانت داخل مصفوفة accounts أو wallets
-      if (Array.isArray(appState.accounts)) appState.accounts.forEach(a => a.balance = 0);
-      if (Array.isArray(appState.wallets)) appState.wallets.forEach(w => w.balance = 0);
-    }
-    if (typeof saveState === "function") saveState(false);
-    if (typeof window.pushStateToCloud === "function") await window.pushStateToCloud(appState, true);
-    if (typeof renderAllViews === "function") renderAllViews();
-  } catch (e) { console.error(e); }
-};
-
+// تعطيل مسار التصفير التلقائي واعتراض أوامر Gemini. لا تُنفذ أي تغييرات مالية من رد API.
 </script>
 
 
@@ -10082,12 +9899,16 @@ window.forceRealZeroFactoryReset = async function() {
     if (typeof window.renderAllViews === "function") {
       const origRender = window.renderAllViews;
       let renderScheduled = false;
+      let latestRenderArgs = [];
+      let latestRenderThis = window;
       window.renderAllViews = function(...args) {
+        latestRenderArgs = args;
+        latestRenderThis = this;
         if (renderScheduled) return;
         renderScheduled = true;
         requestAnimationFrame(() => {
-          origRender.apply(this, args);
-          renderScheduled = false;
+          try { origRender.apply(latestRenderThis, latestRenderArgs); }
+          finally { renderScheduled = false; }
         });
       };
     }
@@ -10159,39 +9980,7 @@ window.forceRealZeroFactoryReset = async function() {
 
 
 <script id="alrida-factory-reset-bridge">
-(function() {
-  const origFetch = window.fetch;
-  window.fetch = async function(...args) {
-    const res = await origFetch.apply(this, args);
-    try {
-      const url = args[0] || "";
-      if (typeof url === "string" && url.includes("googleapis.com")) {
-        const clone = res.clone();
-        const data = await clone.json();
-        const reply = data?.candidates?.[0]?.content?.parts?.[0]?.text || "";
-        if (reply.includes("factory_reset") || reply.includes("ضبط المصنع") || reply.includes("تصفير الخزينة")) {
-          if (typeof window.forceRealZeroFactoryReset === "function") {
-            await window.forceRealZeroFactoryReset();
-          } else if (typeof window.resetToCleanProductionDB === "function") {
-            window.resetToCleanProductionDB(true);
-          } else if (typeof appState === "object" && appState !== null) {
-            appState.invoices = [];
-            appState.merchants = [];
-            appState.suppliers = [];
-            appState.transactions = [];
-            appState.sales = [];
-            appState.purchases = [];
-            appState.expenses = [];
-            if (Array.isArray(appState.accounts)) appState.accounts.forEach(a => a.balance = 0);
-            if (typeof saveState === "function") saveState(false);
-            if (typeof renderAllViews === "function") renderAllViews();
-          }
-        }
-      }
-    } catch(e) {}
-    return res;
-  };
-})();
+// معطل: لا يسمح بتحويل نص رد Gemini إلى أمر تصفير أو حذف مباشر.
 </script>
 
 </body>
